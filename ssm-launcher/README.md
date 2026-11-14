@@ -1,20 +1,43 @@
 # SourceSpeedrunMod launcher
 
-Electron launcher in the mod's own style. It:
+Electron launcher in the mod's own style. Players download only the launcher;
+it installs and updates the mod itself.
 
-- finds Steam, its libraries and the Half-Life 2 install (app 220) on this PC,
-- lets the player **sign in through Steam** and checks that the account owns HL2,
-- points the mod's `hl2/gameinfo.txt` at wherever Steam installed HL2, then starts `hl2_win64.exe`,
-- downloads mod updates (only changed files, SHA-256 verified).
+- **Install / Update / Play.** The big button downloads the mod from the latest
+  GitHub release with progress (MB, speed, time left), extracts it, and turns
+  into **Play**. Newer releases show up as **Update**. Cancel any time.
+- Finds Steam, its libraries and the Half-Life 2 install (app 220).
+- **Sign in through Steam** and a Half-Life 2 ownership check.
+- Points the mod's `hl2/gameinfo.txt` at wherever Steam installed HL2, then starts the game.
 
 ```
 npm install            # once
-npm start              # run from source (uses ../game as the mod folder)
-npm run dist           # build dist/SSM-Launcher.exe (single portable exe)
+npm start              # run from source (uses ../game as the mod folder if present)
+npm run dist           # build dist/SSM-Launcher-Setup.exe
 ```
 
-Put `SSM-Launcher.exe` in the mod folder (next to `hl2_win64.exe`); it finds the
-folder by itself. Otherwise the player picks it in Settings.
+`SSM-Launcher-Setup.exe` is a one-click, per-user installer (no admin rights). It
+puts the launcher in `%LOCALAPPDATA%\Programs` with Start menu and desktop
+shortcuts. Installed, the launcher starts in well under a second. The old
+portable exe took ~8 s because it unpacked itself on every start.
+
+## Publishing a mod release
+
+The launcher reads `https://api.github.com/repos/<repo>/releases/latest`
+(`mistersliva/SourceSpeedrunMod`; change it with `releaseRepo` in
+`launcher-config.json` next to the launcher exe). It downloads the asset named
+`SourceSpeedrunMod-<version>.zip`. The zip must hold a single top-level
+`SourceSpeedrunMod/` folder with the game files, and no player data (saves,
+`config.cfg`, `autoexec.cfg`, splits, the `bin/x64/cef/cache` profile) or `.pdb` files.
+
+1. Build the game, then copy the game folder without the files above into `SourceSpeedrunMod/`.
+2. `tar -a -c -f SourceSpeedrunMod-v1.1.0.zip SourceSpeedrunMod`
+3. `gh release create v1.1.0 SourceSpeedrunMod-v1.1.0.zip dist/SSM-Launcher-Setup.exe`
+
+The tag is the mod version. Launchers with an older installed version
+(`ssm-version.txt` in the mod folder) offer **Update**. Updates extract over the
+install, so player saves and configs stay. A development build (no version
+file) never gets overwritten.
 
 ## Steam sign-in and ownership
 
@@ -26,50 +49,18 @@ it with Steam (`check_authentication`) before trusting it.
 Steam only reveals which games an account owns through the **Web API**, which
 needs a key. Never put the key in the launcher (anyone can extract it). Run the
 tiny server in `tools/ownership-worker.js` (Cloudflare Worker, free tier; steps
-are at the top of the file) and ship this next to the exe:
+are at the top of the file) and ship this next to the launcher exe:
 
 ```json
-// launcher-config.json
-{
-  "ownershipEndpoint": "https://ssm-ownership.<you>.workers.dev/owns",
-  "updateUrl": "https://<your host>/ssm/manifest.json"
-}
+{ "ownershipEndpoint": "https://ssm-ownership.<you>.workers.dev/owns" }
 ```
 
 Without it the launcher still knows HL2 is playable when the account signed in
 to Steam on this PC has it installed. For a private profile ("Game details:
 private") the Web API can't tell, and the launcher shows "Unknown" instead of blocking.
 
-## Downloads and updates
+## Code signing
 
-Two parts: getting the mod the first time, and keeping it current.
-
-**First download.** Zip the mod folder (`game\` without `hl2\save`,
-`hl2\cfg\config.cfg`, `*.pdb`) together with `SSM-Launcher.exe` and publish
-it as a **GitHub Release** asset (2 GB per file, free bandwidth). The game
-content itself is never shipped: players need Half-Life 2 from Steam, and the
-launcher mounts it from their install.
-
-**Updates.** Build a release folder from your current build and upload it to
-any static host (GitHub Pages, a Release, Cloudflare R2, S3...):
-
-```
-node tools/make-manifest.js ..\game ..\release 1.1.0
-```
-
-This writes `release/manifest.json` (path, size and SHA-256 per file) and copies
-the files to `release/files/`. Upload the whole `release` folder and set
-`updateUrl` to the manifest's URL. The launcher's Updates page compares hashes,
-downloads only what changed into `.update\`, verifies each file, then moves
-them into place. Player saves, `config.cfg`, `splits\` and `custom\` are never
-touched. GitHub Releases can't hold a folder tree; for those, host `release/`
-on GitHub Pages or R2 instead.
-
-**Updating the launcher itself.** Switch the build target to `nsis` and add
-`electron-updater` with a `publish` entry for GitHub Releases. The installed
-launcher then updates itself from new releases. The portable exe can't
-update itself; ship a new exe in the mod update instead.
-
-**Code signing.** Unsigned exes get a SmartScreen warning on first run. An OV/EV
+Unsigned installers get a SmartScreen warning on first run. An OV/EV
 code-signing certificate (or Azure Trusted Signing) removes it; electron-builder
 signs automatically once `CSC_LINK` / `CSC_KEY_PASSWORD` are set.

@@ -33,7 +33,12 @@
 
     <div class="playbox">
       <div class="playbox__status" id="play-status">Checking…</div>
+      <div class="dl" id="dl" hidden>
+        <div class="dl__bar"><div class="dl__fill" id="dl-fill"></div></div>
+        <div class="dl__line"><span id="dl-text"></span><button class="btn btn--text btn--small" id="dl-cancel">Cancel</button></div>
+      </div>
       <button class="play" id="play" disabled>Play</button>
+      <button class="btn btn--text playbox__alt" id="play-anyway" hidden>Play without updating</button>
     </div>
   </aside>
 
@@ -113,15 +118,15 @@
         <h2 class="panel__title">Updates</h2>
         <div class="rows">
           <div class="row"><span class="row__label">Installed version</span><span class="row__value" id="upd-current">—</span></div>
-          <div class="row"><span class="row__label">Available</span><span class="row__value" id="upd-available">—</span></div>
-          <div class="row"><span class="row__label">Update server</span><span class="row__value" id="upd-server">—</span></div>
+          <div class="row"><span class="row__label">Latest release</span><span class="row__value" id="upd-available">—</span></div>
+          <div class="row"><span class="row__label">Download size</span><span class="row__value" id="upd-size">—</span></div>
         </div>
-        <div class="progress" id="upd-progress" hidden><div class="progress__bar" id="upd-bar"></div></div>
-        <div class="note" id="upd-text"></div>
+        <div class="notes" id="upd-notes"></div>
         <div class="panel__footer">
+          <button class="btn btn--text" id="upd-check">Check again</button>
           <span class="spacer"></span>
-          <button class="btn" id="upd-check">Check for updates</button>
-          <button class="btn btn--primary" id="upd-apply" hidden>Install update</button>
+          <button class="btn" id="upd-reinstall" hidden>Reinstall</button>
+          <button class="btn btn--primary" id="upd-apply" hidden>Update</button>
         </div>
       </div>
     </section>
@@ -132,9 +137,14 @@
         <h2 class="panel__title">Settings</h2>
         <div class="rows">
           <div class="row">
-            <span class="row__label">Mod folder</span>
+            <span class="row__label">Install folder</span>
+            <span class="row__value row__value--path" id="set-installdir">—</span>
+            <button class="btn btn--small" id="set-installdir-pick">Change</button>
+          </div>
+          <div class="row">
+            <span class="row__label">Mod folder in use</span>
             <span class="row__value row__value--path" id="set-gamedir">—</span>
-            <button class="btn btn--small" id="set-gamedir-pick">Browse</button>
+            <button class="btn btn--small" id="set-gamedir-pick">Use other</button>
           </div>
           <div class="row">
             <span class="row__label">Launch options</span>
@@ -147,10 +157,6 @@
           <div class="row">
             <span class="row__label">After launching the game</span>
             <div class="cycler" data-setting="closeOnPlay" data-values="true,false" data-labels="Close launcher,Minimize launcher"></div>
-          </div>
-          <div class="row">
-            <span class="row__label">Update server (manifest URL)</span>
-            <input class="input" id="set-update" spellcheck="false" placeholder="https://example.com/ssm/manifest.json">
           </div>
         </div>
         <div class="panel__footer">

@@ -32,8 +32,8 @@ SpeedrunMod for Source-based mods. Based on [Obsoletium](https://github.com/Sour
 ## Install (players)
 
 1. Install **Half-Life 2** in Steam.
-2. Download the latest release from [Releases](../../releases) and unzip it anywhere.
-3. Run `SSM-Launcher.exe` and press **Play**.
+2. Download **`SSM-Launcher-Setup.exe`** from [Releases](../../releases) and run it.
+3. In the launcher press **Install** (it downloads the mod), then **Play**. Updates show up as **Update**.
 
 ## Build (developers)
 

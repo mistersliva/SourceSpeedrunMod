@@ -4,6 +4,7 @@
 const $ = (id) => document.getElementById(id);
 const L = window.launcher;
 let st = null;
+let progress = null; // last install:progress event while installing
 
 function toast(text, kind = '') {
   const t = document.createElement('div');
@@ -20,6 +21,12 @@ function setValue(id, text, cls = '') {
 }
 
 const gb = (bytes) => `${(bytes / 1073741824).toFixed(1)} GB`;
+const mb = (bytes) => `${Math.round(bytes / 1048576)} MB`;
+function duration(s) {
+  if (!Number.isFinite(s) || s <= 0) return '';
+  s = Math.ceil(s);
+  return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')} s`;
+}
 
 // ---------------------------------------------------------------- Pages
 function showPage(name) {
@@ -32,6 +39,76 @@ function showPage(name) {
   }
 }
 for (const b of document.querySelectorAll('.menu__item')) b.addEventListener('click', () => showPage(b.dataset.page));
+
+// ---------------------------------------------------------------- Main button
+// install | update | play, depending on what is on disk and on GitHub.
+function mainAction(s) {
+  if (s.installing) return 'busy';
+  if (!s.gameDir) return 'install';
+  if (s.updateAvailable) return 'update';
+  return 'play';
+}
+
+function renderPlaybox(s) {
+  const hl2 = s.steam?.hl2;
+  const a = s.account;
+  const action = mainAction(s);
+  const btn = $('play');
+  const status = $('play-status');
+  let msg = '';
+  let cls = '';
+  let enabled = true;
+
+  if (action === 'busy') {
+    btn.textContent = 'Installing';
+    enabled = false;
+    msg = '';
+  } else if (action === 'install') {
+    btn.textContent = 'Install';
+    if (s.release) msg = `${s.release.name} · ${mb(s.release.size)} download`;
+    else if (s.releaseError) { msg = `Can't reach the download: ${s.releaseError}`; cls = 'is-bad'; enabled = false; }
+    else { msg = 'Checking for the latest version…'; enabled = false; }
+  } else if (action === 'update') {
+    btn.textContent = 'Update';
+    msg = `${s.release.name} is available (you have ${s.modVersion}) — ${mb(s.release.size)}`;
+    cls = 'is-warn';
+  } else {
+    btn.textContent = 'Play';
+    msg = 'Ready';
+    if (s.running) { msg = 'Game is running'; enabled = false; }
+    else if (!hl2 || !hl2.exists) { msg = 'Half-Life 2 is not installed in Steam'; cls = 'is-bad'; enabled = false; }
+    else if (a?.owned === false) { msg = 'This Steam account does not own Half-Life 2'; cls = 'is-bad'; enabled = false; }
+    else if (!hl2.fullyInstalled) { msg = 'Half-Life 2 is updating in Steam'; cls = 'is-warn'; }
+    else if (!a) msg = 'Ready — sign in through Steam to verify ownership';
+  }
+  status.textContent = msg;
+  status.className = `playbox__status ${cls}`;
+  btn.disabled = !enabled;
+  btn.dataset.action = action;
+  $('play-anyway').hidden = action !== 'update' || s.running;
+  $('dl').hidden = action !== 'busy';
+}
+
+function renderProgress() {
+  const p = progress;
+  if (!p) return;
+  const fill = $('dl-fill');
+  fill.classList.remove('is-indeterminate');
+  if (p.phase === 'download') {
+    fill.style.width = `${p.total ? (p.done / p.total) * 100 : 0}%`;
+    const speed = p.speed ? ` · ${(p.speed / 1048576).toFixed(1)} MB/s` : '';
+    const eta = duration(p.eta);
+    $('dl-text').textContent = `Downloading ${mb(p.done)} / ${mb(p.total)}${speed}${eta ? ` · ${eta} left` : ''}`;
+    $('dl-cancel').hidden = false;
+  } else if (p.phase === 'extract') {
+    fill.style.width = `${p.total ? (p.done / p.total) * 100 : 0}%`;
+    $('dl-text').textContent = `Installing files ${p.done} / ${p.total}`;
+    $('dl-cancel').hidden = false;
+  } else if (p.phase === 'start') {
+    fill.classList.add('is-indeterminate');
+    $('dl-text').textContent = 'Starting download…';
+  }
+}
 
 // ---------------------------------------------------------------- Render
 function ownedText(a) {
@@ -55,8 +132,10 @@ function render(s) {
   else if (!hl2.fullyInstalled) setValue('home-installed', 'Downloading / update pending in Steam', 'is-warn');
   else setValue('home-installed', `Yes — ${hl2.library} (${gb(hl2.sizeOnDisk)})`, 'is-ok');
   $('home-installed').title = hl2?.dir || '';
-  setValue('home-game', s.gameDir || 'Not found — set it in Settings', s.gameDir ? '' : 'is-bad');
-  setValue('home-version', s.modVersion || 'Development build', s.modVersion ? '' : 'is-dim');
+  setValue('home-game', s.gameDir || 'Not installed yet', s.gameDir ? '' : 'is-dim');
+  if (!s.gameDir) setValue('home-version', '—', 'is-dim');
+  else if (s.updateAvailable) setValue('home-version', `${s.modVersion} — ${s.release.name} available`, 'is-warn');
+  else setValue('home-version', s.modVersion || 'Development build', s.modVersion ? 'is-ok' : 'is-dim');
   $('install-hl2').hidden = !(s.steam?.steamInstalled && (!hl2 || !hl2.exists) && a?.owned !== false);
   $('buy-hl2').hidden = a?.owned !== false;
 
@@ -83,31 +162,26 @@ function render(s) {
   setValue('steam-local-user', local ? local.personaName || local.steamid : s.steam?.steamRunning ? s.steam.activeSteamId : '—');
 
   // Updates
-  setValue('upd-current', s.modVersion || 'Development build', s.modVersion ? '' : 'is-dim');
-  setValue('upd-server', s.settings.updateUrl || 'Not set (Settings)', s.settings.updateUrl ? '' : 'is-dim');
-  $('upd-check').disabled = !s.settings.updateUrl || !s.gameDir;
+  setValue('upd-current', s.gameDir ? s.modVersion || 'Development build' : 'Not installed', s.modVersion ? '' : 'is-dim');
+  if (s.release) setValue('upd-available', s.release.name, s.updateAvailable ? 'is-warn' : 'is-ok');
+  else setValue('upd-available', s.releaseError || 'Checking…', s.releaseError ? 'is-bad' : 'is-dim');
+  setValue('upd-size', s.release ? mb(s.release.size) : '—');
+  $('upd-notes').textContent = s.release?.notes || '';
+  $('upd-apply').hidden = !s.updateAvailable && !!s.gameDir;
+  $('upd-apply').textContent = s.gameDir ? 'Update' : 'Install';
+  $('upd-reinstall').hidden = !(s.release && s.modVersion && !s.updateAvailable);
+  for (const b of [$('upd-apply'), $('upd-reinstall')]) b.disabled = s.installing || !s.release || s.running;
 
   // Settings
-  setValue('set-gamedir', s.gameDir || 'Not found');
+  setValue('set-installdir', s.settings.installDir || '—');
+  setValue('set-gamedir', s.gameDir || 'Not installed');
+  $('set-installdir-pick').disabled = s.installing;
   if (document.activeElement !== $('set-launch')) $('set-launch').value = s.settings.launchOptions || '';
-  if (document.activeElement !== $('set-update')) $('set-update').value = s.settings.updateUrl || '';
   for (const c of document.querySelectorAll('.cycler')) renderCycler(c);
   $('launcher-version').textContent = `Launcher ${s.version}`;
+  $('open-gamedir').hidden = !s.gameDir;
 
-  // Play
-  const status = $('play-status');
-  let msg = 'Ready';
-  let cls = '';
-  let canPlay = !!s.gameDir && !s.running;
-  if (s.running) { msg = 'Game is running'; cls = ''; }
-  else if (!s.gameDir) { msg = 'Mod folder not found — see Settings'; cls = 'is-bad'; }
-  else if (!hl2 || !hl2.exists) { msg = 'Half-Life 2 is not installed in Steam'; cls = 'is-bad'; canPlay = false; }
-  else if (a?.owned === false) { msg = 'This Steam account does not own Half-Life 2'; cls = 'is-bad'; canPlay = false; }
-  else if (!hl2.fullyInstalled) { msg = 'Half-Life 2 is updating in Steam'; cls = 'is-warn'; }
-  else if (!a) { msg = 'Ready — sign in through Steam to verify ownership'; }
-  status.textContent = msg;
-  status.className = `playbox__status ${cls}`;
-  $('play').disabled = !canPlay;
+  renderPlaybox(s);
 }
 
 async function refresh() {
@@ -134,15 +208,12 @@ function renderCycler(c) {
   c.children[1].textContent = labels[Math.max(0, values.indexOf(cur))];
 }
 
-function bindInput(id, key) {
-  const el = $(id);
-  el.addEventListener('change', async () => { await L.setSettings({ [key]: el.value.trim() }); refresh(); });
-}
-bindInput('set-launch', 'launchOptions');
-bindInput('set-update', 'updateUrl');
-
+$('set-launch').addEventListener('change', async () => { await L.setSettings({ launchOptions: $('set-launch').value.trim() }); refresh(); });
 $('set-gamedir-pick').addEventListener('click', async () => {
   try { if (await L.pickGameDir()) refresh(); } catch (e) { toast(e.message, 'error'); }
+});
+$('set-installdir-pick').addEventListener('click', async () => {
+  try { if (await L.pickInstallDir()) refresh(); } catch (e) { toast(e.message, 'error'); }
 });
 $('open-gamedir').addEventListener('click', () => L.openGameDir());
 
@@ -169,64 +240,42 @@ $('install-hl2').addEventListener('click', () => L.steamInstallHl2());
 $('buy-hl2').addEventListener('click', () => L.steamStore());
 $('refresh').addEventListener('click', refresh);
 
-// ---------------------------------------------------------------- Updates
-L.on('update:progress', (p) => {
-  $('upd-progress').hidden = false;
-  if (p.phase === 'checking') {
-    $('upd-bar').style.width = `${Math.round((p.done / p.total) * 100)}%`;
-    $('upd-text').textContent = `Checking ${p.file}`;
-  } else if (p.phase === 'downloading') {
-    $('upd-bar').style.width = `${p.totalBytes ? Math.round((p.doneBytes / p.totalBytes) * 100) : 0}%`;
-    $('upd-text').textContent = `Downloading ${p.file} — ${(p.doneBytes / 1048576).toFixed(1)} / ${(p.totalBytes / 1048576).toFixed(1)} MB`;
-  } else if (p.phase === 'installing') {
-    $('upd-text').textContent = `Installing ${p.file}`;
-  }
-});
-$('upd-check').addEventListener('click', async () => {
-  $('upd-check').disabled = true;
-  $('upd-apply').hidden = true;
+// ---------------------------------------------------------------- Install / update
+L.on('install:progress', (p) => { progress = p; renderProgress(); });
+
+async function installMod() {
+  progress = { phase: 'start' };
+  $('dl').hidden = false;
+  renderProgress();
   try {
-    const r = await L.checkUpdates();
-    $('upd-progress').hidden = true;
-    if (r.files) {
-      setValue('upd-available', `${r.version || 'New files'} — ${r.files} file(s), ${(r.bytes / 1048576).toFixed(1)} MB`, 'is-warn');
-      $('upd-text').textContent = '';
-      $('upd-apply').hidden = false;
-    } else {
-      setValue('upd-available', `Up to date${r.version ? ` (${r.version})` : ''}`, 'is-ok');
-      $('upd-text').textContent = '';
-    }
+    const r = await L.installMod();
+    toast(`SourceSpeedrunMod ${r.version} installed`, 'ok');
   } catch (e) {
-    $('upd-progress').hidden = true;
-    $('upd-text').textContent = '';
-    toast(e.message, 'error');
+    if (e.message === 'cancelled') toast('Download cancelled');
+    else toast(e.message, 'error');
   }
-  $('upd-check').disabled = false;
-});
-$('upd-apply').addEventListener('click', async () => {
-  $('upd-apply').disabled = true;
-  $('upd-check').disabled = true;
-  try {
-    await L.applyUpdates();
-    toast('Update installed', 'ok');
-    $('upd-apply').hidden = true;
-    setValue('upd-available', 'Up to date', 'is-ok');
-  } catch (e) {
-    toast(e.message, 'error');
-  }
-  $('upd-progress').hidden = true;
-  $('upd-text').textContent = '';
-  $('upd-apply').disabled = false;
-  $('upd-check').disabled = false;
+  progress = null;
   refresh();
+}
+$('dl-cancel').addEventListener('click', () => L.cancelInstall());
+$('upd-apply').addEventListener('click', installMod);
+$('upd-reinstall').addEventListener('click', installMod);
+$('upd-check').addEventListener('click', async () => {
+  try { render(await L.checkMod()); } catch (e) { toast(e.message, 'error'); }
 });
 
 // ---------------------------------------------------------------- Play / window
-$('play').addEventListener('click', async () => {
+async function play() {
   $('play').disabled = true;
   try { await L.play(); } catch (e) { toast(e.message, 'error'); }
   refresh();
+}
+$('play').addEventListener('click', () => {
+  const action = $('play').dataset.action;
+  if (action === 'install' || action === 'update') installMod();
+  else if (action === 'play') play();
 });
+$('play-anyway').addEventListener('click', play);
 $('win-min').addEventListener('click', () => L.minimize());
 $('win-close').addEventListener('click', () => L.close());
 L.on('state-changed', refresh);
@@ -234,4 +283,4 @@ L.on('toast', (t) => toast(t.text, t.kind));
 
 refresh();
 // Steam can finish installing / be started while the launcher is open.
-setInterval(() => { if (!document.hidden) refresh(); }, 5000);
+setInterval(() => { if (!document.hidden && !st?.installing) refresh(); }, 5000);

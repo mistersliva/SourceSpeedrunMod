@@ -9,33 +9,37 @@ const { spawn } = require('child_process');
 const steamLocal = require('./src/steam-local');
 const steamAuth = require('./src/steam-auth');
 const gameinfo = require('./src/gameinfo');
-const { Updater } = require('./src/updater');
+const modInstall = require('./src/mod-install');
 
 const GAME_EXE = 'hl2_win64.exe';
 
 // ------------------------------------------------------------------ Settings
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 
-// Optional defaults shipped next to the exe (e.g. the update server URL).
+// Optional defaults shipped next to the exe (release repository, ownership server).
 function bundledConfig() {
-  for (const dir of [process.env.PORTABLE_EXECUTABLE_DIR, path.dirname(process.execPath), __dirname].filter(Boolean)) {
-    try { return JSON.parse(fs.readFileSync(path.join(dir, 'launcher-config.json'), 'utf8')); } catch {}
+  for (const dir of [path.dirname(process.execPath), __dirname].filter(Boolean)) {
+    try { return JSON.parse(fs.readFileSync(path.join(dir, 'launcher-config.json'), 'utf8').replace(/^﻿/, '')); } catch {}
   }
   return {};
 }
 
 // ownershipEndpoint / steamApiKey come from launcher-config.json (see README).
-const DEFAULTS = { gameDir: '', launchOptions: '-novid', windowed: false, closeOnPlay: true, updateUrl: '', ownershipEndpoint: '', steamApiKey: '', account: null };
+// gameDir: a mod folder the player picked (e.g. a development build).
+// installDir: where the launcher installs the mod from GitHub releases.
+const defaultInstallDir = () => path.join(process.env.LOCALAPPDATA || app.getPath('userData'), 'SourceSpeedrunMod');
+const DEFAULTS = { gameDir: '', installDir: '', launchOptions: '-novid', windowed: false, closeOnPlay: true, releaseRepo: modInstall.DEFAULT_REPO, ownershipEndpoint: '', steamApiKey: '', account: null };
 let settings = { ...DEFAULTS };
 function loadSettings() {
   let saved = {};
-  try { saved = JSON.parse(fs.readFileSync(settingsFile(), 'utf8')); } catch {}
+  try { saved = JSON.parse(fs.readFileSync(settingsFile(), 'utf8').replace(/^﻿/, '')); } catch {}
   const bundled = bundledConfig();
   settings = { ...DEFAULTS, ...bundled, ...saved };
   // Server-side settings always come from the shipped config, never from the
   // per-user file.
   settings.ownershipEndpoint = bundled.ownershipEndpoint || '';
   settings.steamApiKey = bundled.steamApiKey || '';
+  if (!settings.installDir) settings.installDir = defaultInstallDir();
 }
 function saveSettings() {
   const { ownershipEndpoint, steamApiKey, ...user } = settings;
@@ -49,16 +53,29 @@ const isGameDir = (d) => !!d && fs.existsSync(path.join(d, GAME_EXE)) && fs.exis
 function findGameDir() {
   const candidates = [
     settings.gameDir,
-    process.env.PORTABLE_EXECUTABLE_DIR,           // portable exe placed in the game folder
-    path.dirname(process.execPath),
-    path.join(process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(process.execPath), 'game'),
+    settings.installDir,
+    path.dirname(process.execPath),                 // launcher placed in the mod folder
     path.resolve(__dirname, '..', 'game'),          // development checkout
   ];
   return candidates.find(isGameDir) || '';
 }
 
-function modVersion(gameDir) {
-  try { return fs.readFileSync(path.join(gameDir, 'ssm-version.txt'), 'utf8').trim(); } catch { return ''; }
+const modVersion = (gameDir) => modInstall.installedVersion(gameDir);
+
+// Latest release, cached for a few minutes (GitHub allows 60 requests/hour).
+let release = null;
+let releaseAt = 0;
+let releaseError = '';
+async function checkRelease(force = false) {
+  if (!force && Date.now() - releaseAt < 5 * 60 * 1000) return release;
+  releaseAt = Date.now();
+  try {
+    release = await modInstall.latestRelease(settings.releaseRepo);
+    releaseError = '';
+  } catch (e) {
+    releaseError = e.message;
+  }
+  return release;
 }
 
 // ------------------------------------------------------------------- State
@@ -84,11 +101,18 @@ async function state() {
   const gameDir = findGameDir();
   const mounted = gameDir ? gameinfo.currentHl2Path(gameDir) : null;
   const { steamApiKey, ...publicSettings } = settings;
+  const installed = gameDir ? modVersion(gameDir) : '';
   return {
     version: app.getVersion(),
     settings: { ...publicSettings, hasOwnershipCheck: !!(settings.ownershipEndpoint || steamApiKey) },
     gameDir,
-    modVersion: gameDir ? modVersion(gameDir) : '',
+    modVersion: installed,
+    // Updates are offered for launcher-installed copies (they have a version
+    // file), never over a development build.
+    release: release && { tag: release.tag, name: release.name, notes: release.notes, url: release.url, size: release.asset.size },
+    releaseError,
+    updateAvailable: !!(release && installed && modInstall.newer(release.tag, installed)),
+    installing,
     hl2Mounted: mounted,
     steam,
     account,
@@ -157,7 +181,7 @@ function handle(channel, fn) {
 handle('state', state);
 handle('play', play);
 handle('settings:set', (patch) => {
-  const allowed = ['gameDir', 'launchOptions', 'windowed', 'closeOnPlay', 'updateUrl'];
+  const allowed = ['gameDir', 'launchOptions', 'windowed', 'closeOnPlay'];
   for (const k of Object.keys(patch || {})) if (allowed.includes(k)) settings[k] = patch[k];
   saveSettings();
   return settings;
@@ -189,24 +213,37 @@ handle('steam:refresh', async () => { await refreshAccount(); return account; })
 handle('steam:install', () => shell.openExternal('steam://install/220'));
 handle('steam:store', () => shell.openExternal('https://store.steampowered.com/app/220/'));
 
-let updatePlan = null;
-handle('update:check', async () => {
-  const gameDir = findGameDir();
-  if (!gameDir) throw new Error('Game folder not found.');
-  if (!settings.updateUrl) throw new Error('No update server set.');
-  const u = new Updater(gameDir, path.join(app.getPath('userData'), 'hash-cache.json'));
-  updatePlan = await u.check(settings.updateUrl, (p) => send('update:progress', p));
-  return { version: updatePlan.version, files: updatePlan.toUpdate.length, bytes: updatePlan.bytes, current: modVersion(gameDir) };
+// Install or update the mod from the latest release.
+let installing = false;
+handle('mod:check', async () => { await checkRelease(true); return state(); });
+handle('mod:install', async () => {
+  if (gameProcess) throw new Error('Close the game first.');
+  const rel = await checkRelease(true);
+  if (!rel) throw new Error(releaseError || 'No release found.');
+  // Update in place when the mod was installed by the launcher, otherwise
+  // install into the install folder (never over a development build).
+  const current = findGameDir();
+  const dir = current && modVersion(current) ? current : settings.installDir;
+  installing = true;
+  send('state-changed');
+  try {
+    await modInstall.install({ release: rel, dir, onProgress: (p) => send('install:progress', p) });
+    return { dir, version: rel.tag };
+  } finally {
+    installing = false;
+    send('state-changed');
+  }
 });
-handle('update:apply', async () => {
-  const gameDir = findGameDir();
-  if (!updatePlan) throw new Error('Check for updates first.');
-  if (gameProcess) throw new Error('Close the game before updating.');
-  const u = new Updater(gameDir, path.join(app.getPath('userData'), 'hash-cache.json'));
-  await u.apply(settings.updateUrl, updatePlan, (p) => send('update:progress', p));
-  if (updatePlan.version) fs.writeFileSync(path.join(gameDir, 'ssm-version.txt'), updatePlan.version);
-  updatePlan = null;
-  return true;
+handle('mod:cancel', () => modInstall.cancel());
+handle('mod:pickInstallDir', async () => {
+  const r = await dialog.showOpenDialog(win, { title: 'Install SourceSpeedrunMod to', properties: ['openDirectory', 'createDirectory'] });
+  if (r.canceled || !r.filePaths[0]) return null;
+  let dir = r.filePaths[0];
+  // Picking a non-empty parent folder installs into a SourceSpeedrunMod subfolder.
+  if (!isGameDir(dir) && fs.existsSync(dir) && fs.readdirSync(dir).length) dir = path.join(dir, 'SourceSpeedrunMod');
+  settings.installDir = dir;
+  saveSettings();
+  return dir;
 });
 handle('win:minimize', () => win.minimize());
 handle('win:close', () => win.close());
@@ -220,6 +257,7 @@ if (!app.requestSingleInstanceLock()) {
     loadSettings();
     createWindow();
     refreshAccount().then(() => send('state-changed')).catch(() => {});
+    checkRelease().then(() => send('state-changed')).catch(() => {});
   });
   app.on('window-all-closed', () => app.quit());
 }

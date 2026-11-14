@@ -21,12 +21,14 @@ contextBridge.exposeInMainWorld('launcher', {
   steamRefresh: () => call('steam:refresh'),
   steamInstallHl2: () => call('steam:install'),
   steamStore: () => call('steam:store'),
-  checkUpdates: () => call('update:check'),
-  applyUpdates: () => call('update:apply'),
+  checkMod: () => call('mod:check'),
+  installMod: () => call('mod:install'),
+  cancelInstall: () => call('mod:cancel'),
+  pickInstallDir: () => call('mod:pickInstallDir'),
   minimize: () => call('win:minimize'),
   close: () => call('win:close'),
   on: (channel, fn) => {
-    if (!['state-changed', 'toast', 'update:progress'].includes(channel)) return;
+    if (!['state-changed', 'toast', 'install:progress'].includes(channel)) return;
     ipcRenderer.on(channel, (_e, data) => fn(data));
   },
 });

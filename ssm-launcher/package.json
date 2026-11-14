@@ -1,27 +1,52 @@
 {
   "name": "ssm-launcher",
   "productName": "SourceSpeedrunMod Launcher",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Launcher for SourceSpeedrunMod",
   "author": "SourceSpeedrunMod",
   "main": "main.js",
   "private": true,
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win portable",
-    "manifest": "node tools/make-manifest.js"
+    "dist": "electron-builder --win nsis"
   },
   "build": {
     "appId": "com.sourcespeedrunmod.launcher",
     "productName": "SourceSpeedrunMod Launcher",
-    "directories": { "output": "dist", "buildResources": "build" },
-    "files": ["main.js", "preload.js", "src/**/*", "renderer/**/*", "build/icon.png", "package.json"],
-    "win": {
-      "target": [{ "target": "portable", "arch": ["x64"] }],
-      "icon": "build/icon.png",
-      "artifactName": "SSM-Launcher.exe"
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
     },
-    "portable": { "requestExecutionLevel": "user" }
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "renderer/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "SSM-Launcher-Setup.exe"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "SourceSpeedrunMod",
+      "uninstallDisplayName": "SourceSpeedrunMod Launcher",
+      "deleteAppDataOnUninstall": false
+    }
   },
   "devDependencies": {
     "electron": "^45.3.2",
