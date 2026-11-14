@@ -777,6 +777,34 @@ uint32_t CHtmlPanel::Modifiers() const
 	return m;
 }
 
+// The engine keeps delivering cursor moves and button presses to vgui while
+// the game window is minimized or behind another application. Only pass them
+// to the page when the game window is the active one and the cursor is
+// actually over it; otherwise hover sounds play and clicks land "through"
+// other windows.
+static ConVar htmlui_mouse_focus_check( "htmlui_mouse_focus_check", "1", 0, "Ignore mouse input to the HTML UI while the game window is inactive or covered." );
+
+static bool GameWindowHasMouse()
+{
+	if ( !htmlui_mouse_focus_check.GetBool() )
+		return true;
+	HWND fg = ::GetForegroundWindow();
+	if ( !fg || ::IsIconic( fg ) )
+		return false;
+	DWORD pid = 0;
+	::GetWindowThreadProcessId( fg, &pid );
+	if ( pid != ::GetCurrentProcessId() )
+		return false;
+	POINT pt;
+	if ( !::GetCursorPos( &pt ) )
+		return false;
+	HWND under = ::WindowFromPoint( pt );
+	if ( !under )
+		return false;
+	::GetWindowThreadProcessId( under, &pid );
+	return pid == ::GetCurrentProcessId();
+}
+
 static bool ToBrowserButton( vgui::MouseCode code, htmlhost::MouseButton &out )
 {
 	switch ( code )
@@ -792,8 +820,18 @@ void CHtmlPanel::OnCursorMoved( int x, int y )
 {
 	m_nLastX = x;
 	m_nLastY = y;
-	if ( m_pView && m_bInteractive )
-		m_pView->MouseMove( x, y, Modifiers(), false );
+	if ( !m_pView || !m_bInteractive )
+		return;
+	if ( !GameWindowHasMouse() )
+	{
+		// Tell the page the mouse left, once, so hover states clear.
+		if ( !m_bMouseOutside )
+			m_pView->MouseMove( x, y, 0, true );
+		m_bMouseOutside = true;
+		return;
+	}
+	m_bMouseOutside = false;
+	m_pView->MouseMove( x, y, Modifiers(), false );
 }
 
 void CHtmlPanel::OnCursorExited()
@@ -804,7 +842,7 @@ void CHtmlPanel::OnCursorExited()
 
 void CHtmlPanel::OnMousePressed( vgui::MouseCode code )
 {
-	if ( !m_bInteractive )
+	if ( !m_bInteractive || !GameWindowHasMouse() )
 		return;
 	RequestFocus();
 	htmlhost::MouseButton b;
@@ -815,7 +853,7 @@ void CHtmlPanel::OnMousePressed( vgui::MouseCode code )
 void CHtmlPanel::OnMouseDoublePressed( vgui::MouseCode code )
 {
 	htmlhost::MouseButton b;
-	if ( m_pView && m_bInteractive && ToBrowserButton( code, b ) )
+	if ( m_pView && m_bInteractive && GameWindowHasMouse() && ToBrowserButton( code, b ) )
 		m_pView->MouseButton( m_nLastX, m_nLastY, b, false, 2, Modifiers() );
 }
 
@@ -828,7 +866,7 @@ void CHtmlPanel::OnMouseReleased( vgui::MouseCode code )
 
 void CHtmlPanel::OnMouseWheeled( int delta )
 {
-	if ( m_pView && m_bInteractive )
+	if ( m_pView && m_bInteractive && GameWindowHasMouse() )
 		m_pView->MouseWheel( m_nLastX, m_nLastY, 0, delta * 120, Modifiers() );
 }
 

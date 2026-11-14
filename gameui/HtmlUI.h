@@ -91,6 +91,7 @@ private:
 	uint64_t m_nSerialAtShow;
 	double m_flShownTime;
 	int m_nLastX, m_nLastY;
+	bool m_bMouseOutside = false;
 	std::atomic<int> m_nPendingCursor;
 	std::vector<GlassRect> m_GlassRects;
 	struct FlashState { int r = 0, g = 0, b = 0; float alpha = 0; double start = 0; float duration = 0; } m_Flash;

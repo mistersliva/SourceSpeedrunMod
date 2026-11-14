@@ -27,7 +27,10 @@ function bundledConfig() {
 // ownershipEndpoint / steamApiKey come from launcher-config.json (see README).
 // gameDir: a mod folder the player picked (e.g. a development build).
 // installDir: where the launcher installs the mod from GitHub releases.
-const defaultInstallDir = () => path.join(process.env.LOCALAPPDATA || app.getPath('userData'), 'SourceSpeedrunMod');
+// Installed launcher: <launcher folder>\Games\SourceSpeedrunMod (the installer
+// makes Games\ writable). Launcher 1.1 installed the mod in %LOCALAPPDATA%.
+const legacyInstallDir = () => path.join(process.env.LOCALAPPDATA || app.getPath('userData'), 'SourceSpeedrunMod');
+const defaultInstallDir = () => (app.isPackaged ? path.join(path.dirname(process.execPath), 'Games', 'SourceSpeedrunMod') : legacyInstallDir());
 const DEFAULTS = { gameDir: '', installDir: '', launchOptions: '-novid', windowed: false, closeOnPlay: true, releaseRepo: modInstall.DEFAULT_REPO, ownershipEndpoint: '', steamApiKey: '', account: null };
 let settings = { ...DEFAULTS };
 function loadSettings() {
@@ -39,7 +42,9 @@ function loadSettings() {
   // per-user file.
   settings.ownershipEndpoint = bundled.ownershipEndpoint || '';
   settings.steamApiKey = bundled.steamApiKey || '';
-  if (!settings.installDir) settings.installDir = defaultInstallDir();
+  // Unless the player chose a folder: keep an existing 1.1 install where it is,
+  // otherwise use the default.
+  if (!saved.installDirCustom) settings.installDir = isGameDir(legacyInstallDir()) ? legacyInstallDir() : defaultInstallDir();
 }
 function saveSettings() {
   const { ownershipEndpoint, steamApiKey, ...user } = settings;
@@ -242,6 +247,7 @@ handle('mod:pickInstallDir', async () => {
   // Picking a non-empty parent folder installs into a SourceSpeedrunMod subfolder.
   if (!isGameDir(dir) && fs.existsSync(dir) && fs.readdirSync(dir).length) dir = path.join(dir, 'SourceSpeedrunMod');
   settings.installDir = dir;
+  settings.installDirCustom = true;
   saveSettings();
   return dir;
 });

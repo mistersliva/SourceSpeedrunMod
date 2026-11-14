@@ -151,16 +151,9 @@ body.is-loading #main { opacity: 0; }
 }
 
 .brand { display: flex; align-items: center; gap: 1.6rem; margin-bottom: 5vh; }
-.brand__mark {
-  font-size: 3.1rem;
-  font-weight: 700;
-  font-stretch: 75%;
-  font-style: italic;
-  letter-spacing: -0.02em;
-  line-height: 1;
-  color: #ececec;
-  transform: skewX(-6deg);
-}
+.brand__mark { flex: 0 0 auto; height: 3.4rem; width: auto; }
+.brand__s { fill: #ededed; }
+.brand__speed { fill: var(--accent); }
 .brand__rule { align-self: stretch; width: 2px; margin: -0.3rem 0; background: rgba(255, 255, 255, 0.75); }
 .brand__name { font-size: 1.15rem; font-weight: 300; line-height: 1.15; letter-spacing: 0.32em; color: #e2e2e2; }
 

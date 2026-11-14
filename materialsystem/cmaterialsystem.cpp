@@ -2184,7 +2184,11 @@ bool CMaterialSystem::OverrideConfig( const MaterialSystem_Config_t &_config, bo
 	if ( bResetAnisotropy || recomputeSnapshots || bRedownloadLightmaps ||
 		// dimhotepus: Ensure single-threaded material system on dx level change.
 		bRedownloadTextures || dxSupportLevelChanged || bVideoModeChange ||
-		bSetStandardVertexShaderConstants || bResetTextureFilter )
+		bSetStandardVertexShaderConstants || bResetTextureFilter ||
+		// SourceSpeedrunMod: reloading materials (e.g. mat_reducefillrate,
+		// "Shader detail") with the queued render thread still running
+		// deadlocks it on the material system mutex; go single-threaded first.
+		bReloadMaterials )
 	{
 		Unlock( hLock );
 		ForceSingleThreaded();

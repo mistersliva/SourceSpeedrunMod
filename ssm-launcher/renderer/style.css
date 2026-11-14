@@ -53,7 +53,9 @@ button { font: inherit; color: inherit; }
 /* ---------------------------------------------------------------- Left column */
 .side { position: fixed; top: 0; left: 0; bottom: 0; width: var(--side-w); display: flex; flex-direction: column; padding: 13vh 0 6vh 3.6rem; }
 .brand { display: flex; align-items: center; gap: 1.4rem; margin-bottom: 7vh; }
-.brand__mark { font-size: 2.9rem; font-weight: 700; font-stretch: 75%; font-style: italic; letter-spacing: -0.02em; line-height: 1; transform: skewX(-6deg); color: #ececec; }
+.brand__mark { flex: 0 0 auto; height: 3.4rem; width: auto; }
+.brand__s { fill: #ededed; }
+.brand__speed { fill: var(--accent); }
 .brand__rule { align-self: stretch; width: 2px; margin: -0.3rem 0; background: rgba(255, 255, 255, 0.75); }
 .brand__name { font-size: 1.05rem; font-weight: 300; line-height: 1.15; letter-spacing: 0.32em; text-transform: uppercase; color: #e2e2e2; }
 

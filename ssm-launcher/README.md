@@ -16,10 +16,13 @@ npm start              # run from source (uses ../game as the mod folder if pres
 npm run dist           # build dist/SSM-Launcher-Setup.exe
 ```
 
-`SSM-Launcher-Setup.exe` is a one-click, per-user installer (no admin rights). It
-puts the launcher in `%LOCALAPPDATA%\Programs` with Start menu and desktop
-shortcuts. Installed, the launcher starts in well under a second. The old
-portable exe took ~8 s because it unpacked itself on every start.
+`SSM-Launcher-Setup.exe` is a one-click installer. It asks for admin rights once
+(UAC) and installs to `C:\Program Files\SSM-Launcher`. The mod is downloaded
+into `SSM-Launcher\Games\SourceSpeedrunMod`; the installer makes `Games\`
+writable for normal users, because the launcher runs without admin rights and
+the game writes saves and configs into its own folder. Uninstalling or updating
+the launcher never deletes `Games\` (see `build/installer.nsh`). Installed, the
+launcher starts in well under a second.
 
 ## Publishing a mod release
 

@@ -76,7 +76,14 @@ async function install({ release, dir, onProgress }) {
   let tar = null;
   current = { cancel: () => { abort.abort(); if (tar) tar.kill(); } };
   try {
-    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      const probe = path.join(dir, '.write-test');
+      fs.writeFileSync(probe, '');
+      fs.rmSync(probe);
+    } catch {
+      throw new Error(`No permission to write to ${dir}. Choose another install folder in Settings.`);
+    }
     if (await isGameRunning(dir)) throw new Error('Close the game first.');
     const need = release.asset.size * 2.2; // zip + extracted files
     if (freeBytes(dir) < need) throw new Error(`Not enough disk space: ${(need / 1073741824).toFixed(1)} GB needed.`);
