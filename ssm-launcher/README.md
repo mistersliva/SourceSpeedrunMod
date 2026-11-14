@@ -30,9 +30,19 @@ The launcher reads `https://api.github.com/repos/<repo>/releases/latest`
 `SourceSpeedrunMod/` folder with the game files, and no player data (saves,
 `config.cfg`, `autoexec.cfg`, splits, the `bin/x64/cef/cache` profile) or `.pdb` files.
 
-1. Build the game, then copy the game folder without the files above into `SourceSpeedrunMod/`.
-2. `tar -a -c -f SourceSpeedrunMod-v1.1.0.zip SourceSpeedrunMod`
-3. `gh release create v1.1.0 SourceSpeedrunMod-v1.1.0.zip dist/SSM-Launcher-Setup.exe`
+1. Build the game (Release), then package it:
+
+   ```
+   powershell -ExecutionPolicy Bypass -File tools\make-release.ps1 -GameDir ..\game -Version v1.1.0 -OutDir ..\release
+   ```
+
+   It copies the game without the files above and adds the Visual C++ runtime
+   next to the binaries (players don't need the VC++ redistributable). It then
+   **refuses to package** anything that would fail on a clean PC: DLLs that need
+   Visual Studio's debug runtime, or imports that are neither in the package nor
+   part of Windows. That check exists because v1.0.0 shipped debug builds of the
+   Lua/Squirrel DLLs and failed on PCs without Visual Studio.
+2. `gh release create v1.1.0 ..\release\SourceSpeedrunMod-v1.1.0.zip dist\SSM-Launcher-Setup.exe`
 
 The tag is the mod version. Launchers with an older installed version
 (`ssm-version.txt` in the mod folder) offer **Update**. Updates extract over the

@@ -13,6 +13,9 @@ $Macro LUASRCDIR			"$LUABASEDIR\lua-5.4.7\include"
 $Macro LUASRCINTERNALDIR	"$LUABASEDIR\lua-5.4.7\src"
 $Macro LUAOUTDIRDEBUG		"$LUABASEDIR\out\lua-5.4.7\Debug"
 $Macro LUAOUTDIRRELEASE		"$LUABASEDIR\out\lua-5.4.7\Release"
+// SourceSpeedrunMod: post-build copies the DLLs of the configuration being built
+// (Release used to ship the Debug DLLs, which need Visual Studio's debug runtime).
+$Macro LUAOUTDIRCONFIG		"$LUABASEDIR\out\lua-5.4.7\$(Configuration)"
 
 $Macro SQUIRRELBASEDIR			"$SRCDIR\thirdparty\squirrel"
 $Macro SQUIRRELSRCDIR			"$SQUIRRELBASEDIR\include"
@@ -20,6 +23,7 @@ $Macro SQUIRRELOUTLIBDIRDEBUG	"$SQUIRRELBASEDIR\out\lib\Debug"
 $Macro SQUIRRELOUTLIBDIRRELEASE	"$SQUIRRELBASEDIR\out\lib\Release"
 $Macro SQUIRRELOUTBINDIRDEBUG	"$SQUIRRELBASEDIR\out\bin\Debug"
 $Macro SQUIRRELOUTBINDIRRELEASE	"$SQUIRRELBASEDIR\out\bin\Release"
+$Macro SQUIRRELOUTBINDIRCONFIG	"$SQUIRRELBASEDIR\out\bin\$(Configuration)"
 
 $Include "$SRCDIR\vpc_scripts\source_dll_base.vpc"
 
@@ -49,17 +53,17 @@ $Configuration
 	$PostBuildEvent
 	{
 		$CommandLine		"IF NOT EXIST $QUOTE$OUTBINDIR$QUOTE MKDIR $QUOTE$OUTBINDIR$QUOTE" "\n" \
-							"COPY $QUOTE$LUAOUTDIRDEBUG\lua_shared.dll$QUOTE $QUOTE$OUTBINDIR\lua_shared.dll$QUOTE" "\n"					\
+							"COPY $QUOTE$LUAOUTDIRCONFIG\lua_shared.dll$QUOTE $QUOTE$OUTBINDIR\lua_shared.dll$QUOTE" "\n"					\
 							"IF ERRORLEVEL 1 GOTO BuildEventFailed" "\n" \
-							"IF EXIST $QUOTE$LUAOUTDIRDEBUG\lua_shared.pdb$QUOTE COPY $QUOTE$LUAOUTDIRDEBUG\lua_shared.pdb$QUOTE $QUOTE$OUTBINDIR\lua_shared.pdb$QUOTE" "\n"					\
+							"IF EXIST $QUOTE$LUAOUTDIRCONFIG\lua_shared.pdb$QUOTE COPY $QUOTE$LUAOUTDIRCONFIG\lua_shared.pdb$QUOTE $QUOTE$OUTBINDIR\lua_shared.pdb$QUOTE" "\n"					\
 							"IF ERRORLEVEL 1 GOTO BuildEventFailed" "\n" \
-							"COPY $QUOTE$SQUIRRELOUTBINDIRDEBUG\squirrel3.dll$QUOTE $QUOTE$OUTBINDIR\squirrel3.dll$QUOTE" "\n"					\
+							"COPY $QUOTE$SQUIRRELOUTBINDIRCONFIG\squirrel3.dll$QUOTE $QUOTE$OUTBINDIR\squirrel3.dll$QUOTE" "\n"					\
 							"IF ERRORLEVEL 1 GOTO BuildEventFailed" "\n" \
-							"IF EXIST $QUOTE$SQUIRRELOUTBINDIRDEBUG\squirrel3.pdb$QUOTE COPY $QUOTE$SQUIRRELOUTBINDIRDEBUG\squirrel3.pdb$QUOTE $QUOTE$OUTBINDIR\squirrel3.pdb$QUOTE" "\n"					\
+							"IF EXIST $QUOTE$SQUIRRELOUTBINDIRCONFIG\squirrel3.pdb$QUOTE COPY $QUOTE$SQUIRRELOUTBINDIRCONFIG\squirrel3.pdb$QUOTE $QUOTE$OUTBINDIR\squirrel3.pdb$QUOTE" "\n"					\
 							"IF ERRORLEVEL 1 GOTO BuildEventFailed" "\n" \
-							"COPY $QUOTE$SQUIRRELOUTBINDIRDEBUG\sqstdlib3.dll$QUOTE $QUOTE$OUTBINDIR\sqstdlib3.dll$QUOTE" "\n"					\
+							"COPY $QUOTE$SQUIRRELOUTBINDIRCONFIG\sqstdlib3.dll$QUOTE $QUOTE$OUTBINDIR\sqstdlib3.dll$QUOTE" "\n"					\
 							"IF ERRORLEVEL 1 GOTO BuildEventFailed" "\n" \
-							"IF EXIST $QUOTE$SQUIRRELOUTBINDIRDEBUG\sqstdlib3.pdb$QUOTE COPY $QUOTE$SQUIRRELOUTBINDIRDEBUG\sqstdlib3.pdb$QUOTE $QUOTE$OUTBINDIR\sqstdlib3.pdb$QUOTE" "\n"					\
+							"IF EXIST $QUOTE$SQUIRRELOUTBINDIRCONFIG\sqstdlib3.pdb$QUOTE COPY $QUOTE$SQUIRRELOUTBINDIRCONFIG\sqstdlib3.pdb$QUOTE $QUOTE$OUTBINDIR\sqstdlib3.pdb$QUOTE" "\n"					\
 							"IF ERRORLEVEL 1 GOTO BuildEventFailed" "\n" \
 							"$BASE"
 	}
