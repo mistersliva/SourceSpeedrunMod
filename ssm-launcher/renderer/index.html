@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https://avatars.steamstatic.com https://avatars.akamai.steamstatic.com https://*.steamstatic.com data:; style-src 'self'; script-src 'self'">
+  <title>SourceSpeedrunMod</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="backdrop" aria-hidden="true"></div>
+
+  <!-- Window bar (frameless window) -->
+  <header class="titlebar">
+    <span class="titlebar__title">SourceSpeedrunMod launcher</span>
+    <button class="titlebar__btn" id="win-min" aria-label="Minimize"><svg viewBox="0 0 12 12"><path d="M2 6.5h8"/></svg></button>
+    <button class="titlebar__btn titlebar__btn--close" id="win-close" aria-label="Close"><svg viewBox="0 0 12 12"><path d="m2.5 2.5 7 7m0-7-7 7"/></svg></button>
+  </header>
+
+  <!-- Left column -->
+  <aside class="side">
+    <div class="brand">
+      <span class="brand__mark">SSM</span>
+      <span class="brand__rule"></span>
+      <span class="brand__name">Source speedrun<br>mod</span>
+    </div>
+
+    <nav class="menu">
+      <button class="menu__item is-current" data-page="home">Home</button>
+      <button class="menu__item" data-page="account">Steam</button>
+      <button class="menu__item" data-page="updates">Updates</button>
+      <button class="menu__item" data-page="settings">Settings</button>
+    </nav>
+
+    <div class="playbox">
+      <div class="playbox__status" id="play-status">Checking…</div>
+      <button class="play" id="play" disabled>Play</button>
+    </div>
+  </aside>
+
+  <!-- Pages -->
+  <main class="pages">
+    <!-- Home -->
+    <section class="page is-open" data-page="home">
+      <div class="panel">
+        <h2 class="panel__title">Status</h2>
+        <div class="rows">
+          <div class="row">
+            <span class="row__label">Steam account</span>
+            <span class="row__value" id="home-account">—</span>
+          </div>
+          <div class="row">
+            <span class="row__label">Half-Life 2 owned</span>
+            <span class="row__value" id="home-owned">—</span>
+          </div>
+          <div class="row">
+            <span class="row__label">Half-Life 2 installed</span>
+            <span class="row__value" id="home-installed">—</span>
+          </div>
+          <div class="row">
+            <span class="row__label">Mod folder</span>
+            <span class="row__value" id="home-game">—</span>
+          </div>
+          <div class="row">
+            <span class="row__label">Mod version</span>
+            <span class="row__value" id="home-version">—</span>
+          </div>
+        </div>
+        <div class="panel__footer">
+          <button class="btn btn--text" id="refresh">Refresh</button>
+          <span class="spacer"></span>
+          <button class="btn" id="install-hl2" hidden>Install Half-Life 2 in Steam</button>
+          <button class="btn" id="buy-hl2" hidden>Open in Steam store</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Steam account -->
+    <section class="page" data-page="account" hidden>
+      <div class="panel">
+        <h2 class="panel__title">Steam</h2>
+        <div class="account" id="account-signed-out">
+          <p class="note">Sign in through Steam to check that your account owns Half-Life 2. Steam's sign-in page opens in your browser: you enter your password there, on Steam's site, and the launcher only receives your public Steam ID.</p>
+          <button class="btn btn--primary" id="steam-signin">Sign in through Steam</button>
+        </div>
+        <div class="account" id="account-signed-in" hidden>
+          <div class="profile">
+            <img class="profile__avatar" id="account-avatar" alt="">
+            <div>
+              <div class="profile__name" id="account-name"></div>
+              <div class="profile__id" id="account-id"></div>
+            </div>
+          </div>
+          <div class="rows">
+            <div class="row"><span class="row__label">Half-Life 2</span><span class="row__value" id="account-owned">—</span></div>
+            <div class="row"><span class="row__label">Checked via</span><span class="row__value" id="account-source">—</span></div>
+          </div>
+        </div>
+        <div class="rows">
+          <div class="row"><span class="row__label">Steam client</span><span class="row__value" id="steam-client">—</span></div>
+          <div class="row"><span class="row__label">Signed in on this PC</span><span class="row__value" id="steam-local-user">—</span></div>
+        </div>
+        <div class="panel__footer">
+          <button class="btn btn--text" id="steam-signout" hidden>Sign out</button>
+          <span class="spacer"></span>
+          <button class="btn" id="steam-refresh" hidden>Check again</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Updates -->
+    <section class="page" data-page="updates" hidden>
+      <div class="panel">
+        <h2 class="panel__title">Updates</h2>
+        <div class="rows">
+          <div class="row"><span class="row__label">Installed version</span><span class="row__value" id="upd-current">—</span></div>
+          <div class="row"><span class="row__label">Available</span><span class="row__value" id="upd-available">—</span></div>
+          <div class="row"><span class="row__label">Update server</span><span class="row__value" id="upd-server">—</span></div>
+        </div>
+        <div class="progress" id="upd-progress" hidden><div class="progress__bar" id="upd-bar"></div></div>
+        <div class="note" id="upd-text"></div>
+        <div class="panel__footer">
+          <span class="spacer"></span>
+          <button class="btn" id="upd-check">Check for updates</button>
+          <button class="btn btn--primary" id="upd-apply" hidden>Install update</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Settings -->
+    <section class="page" data-page="settings" hidden>
+      <div class="panel">
+        <h2 class="panel__title">Settings</h2>
+        <div class="rows">
+          <div class="row">
+            <span class="row__label">Mod folder</span>
+            <span class="row__value row__value--path" id="set-gamedir">—</span>
+            <button class="btn btn--small" id="set-gamedir-pick">Browse</button>
+          </div>
+          <div class="row">
+            <span class="row__label">Launch options</span>
+            <input class="input" id="set-launch" spellcheck="false" placeholder="-novid +exec autoexec">
+          </div>
+          <div class="row">
+            <span class="row__label">Display</span>
+            <div class="cycler" data-setting="windowed" data-values="false,true" data-labels="Fullscreen,Windowed"></div>
+          </div>
+          <div class="row">
+            <span class="row__label">After launching the game</span>
+            <div class="cycler" data-setting="closeOnPlay" data-values="true,false" data-labels="Close launcher,Minimize launcher"></div>
+          </div>
+          <div class="row">
+            <span class="row__label">Update server (manifest URL)</span>
+            <input class="input" id="set-update" spellcheck="false" placeholder="https://example.com/ssm/manifest.json">
+          </div>
+        </div>
+        <div class="panel__footer">
+          <button class="btn btn--text" id="open-gamedir">Open mod folder</button>
+          <span class="spacer"></span>
+          <span class="note note--inline" id="launcher-version"></span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toasts"></div>
+  <script src="app.js"></script>
+</body>
+</html>

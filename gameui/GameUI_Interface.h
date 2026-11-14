@@ -1,162 +1,113 @@
-//========= Copyright Valve Corporation, All rights reserved. ============//
+// Copyright Source Authors. All rights reserved.
 //
-// Purpose: Defines the interface that the GameUI dll exports
-//
-// $NoKeywords: $
-//=============================================================================//
+// IGameUI implementation for the HTML GameUI. All menus, dialogs, the loading
+// screen and the console are HTML/CSS/JS pages rendered by CEF; this class only
+// forwards engine notifications to the page and services its requests.
 
 #ifndef GAMEUI_INTERFACE_H
 #define GAMEUI_INTERFACE_H
 #pragma once
 
-#include "GameUI/IGameUI.h"
+#include <string>
 
-#include "vgui_controls/Panel.h"
-#include "vgui_controls/PHandle.h"
+#include "GameUI/IGameUI.h"
 
 class IGameClientExports;
 
-//-----------------------------------------------------------------------------
-// Purpose: Implementation of GameUI's exposed interface 
-//-----------------------------------------------------------------------------
 class CGameUI : public IGameUI
 {
 public:
 	CGameUI();
 	~CGameUI();
 
-	virtual void Initialize( CreateInterfaceFn appFactory );
-	virtual void Connect( CreateInterfaceFn gameFactory );
-	virtual void Start();
-	virtual void Shutdown();
-	virtual void RunFrame();
-	virtual void PostInit();
+	// IGameUI
+	void Initialize( CreateInterfaceFn appFactory ) override;
+	void PostInit() override;
+	void Connect( CreateInterfaceFn gameFactory ) override;
+	void Start() override;
+	void Shutdown() override;
+	void RunFrame() override;
 
-	// plays the startup mp3 when GameUI starts
-	void PlayGameStartupSound();
+	void OnGameUIActivated() override;
+	void OnGameUIHidden() override;
 
-	// Engine wrappers for activating / hiding the gameUI
-	void ActivateGameUI();
-	void HideGameUI();
+	void OLD_OnConnectToServer( const char *game, int IP, int port ) override;
+	void OnDisconnectFromServer_OLD( uint8 eSteamLoginFailure, const char *username ) override;
+	void OnLevelLoadingStarted( bool bShowProgressDialog ) override;
+	void OnLevelLoadingFinished( bool bError, const char *failureReason, const char *extendedReason ) override;
 
-	// Toggle allowing the engine to hide the game UI with the escape key
-	void PreventEngineHideGameUI();
-	void AllowEngineHideGameUI();
+	bool UpdateProgressBar( float progress, const char *statusText ) override;
+	bool SetShowProgressText( bool show ) override;
 
-	virtual void SetLoadingBackgroundDialog( vgui::VPANEL panel );
+	void ShowNewGameDialog( int chapter ) override;
 
-	// Bonus maps interfaces
-	virtual void BonusMapUnlock( const char *pchFileName = NULL, const char *pchMapName = NULL );
-	virtual void BonusMapComplete( const char *pchFileName = NULL, const char *pchMapName = NULL );
-	virtual void BonusMapChallengeUpdate( const char *pchFileName, const char *pchMapName, const char *pchChallengeName, int iBest );
+	void SessionNotification( const int notification, const int param = 0 ) override;
+	void SystemNotification( const int notification ) override;
+	void ShowMessageDialog( const uint nType, vgui::Panel *pOwner ) override;
+	void UpdatePlayerInfo( uint64 nPlayerId, const char *pName, int nTeam, byte cVoiceState, int nPlayersNeeded, bool bHost ) override;
+	void SessionSearchResult( int searchIdx, void *pHostData, XSESSION_SEARCHRESULT *pResult, int ping ) override;
+	void OnCreditsFinished() override;
+
+	void SetLoadingBackgroundDialog( vgui::VPANEL panel ) override;
+
+	void BonusMapUnlock( const char *pchFileName = nullptr, const char *pchMapName = nullptr ) override;
+	void BonusMapComplete( const char *pchFileName = nullptr, const char *pchMapName = nullptr ) override;
+	void BonusMapChallengeUpdate( const char *pchFileName, const char *pchMapName, const char *pchChallengeName, int iBest ) override;
 	void BonusMapChallengeNames( char *pchFileName, char *pchMapName, char *pchChallengeName ) override;
-	virtual void BonusMapChallengeObjectives( int &iBronze, int &iSilver, int &iGold );
-	virtual void BonusMapDatabaseSave( void );
-	virtual int BonusMapNumAdvancedCompleted( void );
-	virtual void BonusMapNumMedals( int piNumMedals[ 3 ] );
+	void BonusMapChallengeObjectives( int &iBronze, int &iSilver, int &iGold ) override;
+	void BonusMapDatabaseSave() override;
+	int BonusMapNumAdvancedCompleted() override;
+	void BonusMapNumMedals( int piNumMedals[ 3 ] ) override;
 
-	// notifications
-	virtual void OnGameUIActivated();
-	virtual void OnGameUIHidden();
-	virtual void OLD_OnConnectToServer( const char *game, int IP, int port );	// OLD: use OnConnectToServer2
-	virtual void OnConnectToServer2( const char *game, int IP, int connectionPort, int queryPort );
-	virtual void OnDisconnectFromServer( uint8 eSteamLoginFailure );
-	virtual void OnLevelLoadingStarted( bool bShowProgressDialog );
-	virtual void OnLevelLoadingFinished( bool bError, const char *failureReason, const char *extendedReason );
-	virtual void OnDisconnectFromServer_OLD( uint8 eSteamLoginFailure, const char *username ) { OnDisconnectFromServer( eSteamLoginFailure ); }
+	void OnConnectToServer2( const char *game, int IP, int connectionPort, int queryPort ) override;
 
-	// progress
-	virtual bool UpdateProgressBar(float progress, const char *statusText);
-	// Shows progress desc, returns previous setting... (used with custom progress bars )
-	virtual bool SetShowProgressText( bool show );
-
-	// brings up the new game dialog
-	virtual void ShowNewGameDialog( int chapter );
-
-	// Xbox 360
-	virtual void SessionNotification( const int notification, const int param = 0 );
-	virtual void SystemNotification( const int notification );
-	virtual void ShowMessageDialog( const uint nType, vgui::Panel *pOwner = NULL );
-	virtual void CloseMessageDialog( const uint nType = 0 );
-	virtual void UpdatePlayerInfo( uint64 nPlayerId, const char *pName, int nTeam, byte cVoiceState, int nPlayersNeeded, bool bHost );
-	virtual void SessionSearchResult( int searchIdx, void *pHostData, XSESSION_SEARCHRESULT *pResult, int ping );
-	virtual void OnCreditsFinished( void );
-
-	// X360 Storage device validation:
-	//		returns true right away if storage device has been previously selected.
-	//		otherwise returns false and will set the variable pointed by pStorageDeviceValidated to 1
-	//				  once the storage device is selected by user.
-	virtual bool ValidateStorageDevice( int *pStorageDeviceValidated );
-
-	virtual void SetProgressOnStart();
-
-	virtual void OnConfirmQuit( void );
-
-	virtual bool IsMainMenuVisible( void );
-
-	// Client DLL is providing us with a panel that it wants to replace the main menu with
-	virtual void SetMainMenuOverride( vgui::VPANEL panel );
-	// Client DLL is telling us that a main menu command was issued, probably from its custom main menu panel
-	virtual void SendMainMenuCommand( const char *pszCommand );
+	bool ValidateStorageDevice( int *pStorageDeviceValidated ) override;
+	void SetProgressOnStart() override;
+	void OnDisconnectFromServer( uint8 eSteamLoginFailure ) override;
+	void OnConfirmQuit() override;
+	bool IsMainMenuVisible() override;
+	void SetMainMenuOverride( vgui::VPANEL panel ) override;
+	void SendMainMenuCommand( const char *pszCommand ) override;
 
 	void BonusMapChallengeNames( OUT_Z_CAP(fileSize) char *pchFileName, intp fileSize,
 		OUT_Z_CAP(mapSize) char *pchMapName, intp mapSize,
 		OUT_Z_CAP(challengeSize) char *pchChallengeName, intp challengeSize ) override;
 
-	// state
+	// State helpers used by the API.
 	bool IsInLevel();
 	bool IsInBackgroundLevel();
 	bool IsInMultiplayer();
-	bool IsInReplay();
-	bool IsConsoleUI();
-	bool HasSavedThisMenuSession();
-	void SetSavedThisMenuSession( bool bState );
+	bool HasSavedThisMenuSession() const { return m_bHasSavedThisMenuSession; }
+	void SetSavedThisMenuSession( bool bState ) { m_bHasSavedThisMenuSession = bState; }
+	bool IsActive() const { return m_bActivatedUI; }
 
-	void ShowLoadingBackgroundDialog();
-	void HideLoadingBackgroundDialog();
-	bool HasLoadingBackgroundDialog();
+	// Emits the current state (in level, paused, ...) to the page.
+	void PushState();
 
 private:
-	void SendConnectedToGameMessage();
-
-	virtual void StartProgressBar();
-	virtual bool ContinueProgressBar(float progressFraction);
-	virtual void StopProgressBar(bool bError, const char *failureReason, const char *extendedReason = NULL);
-	virtual bool SetProgressBarStatusText(const char *statusText);
-
-	//!! these functions currently not implemented
-	virtual void SetSecondaryProgressBar(float progress /* range [0..1] */);
-	virtual void SetSecondaryProgressBarText(const char *statusText);
-
-	bool FindPlatformDirectory(char *platformDir, int bufferSize);
-	void GetUpdateVersion( char *pszProd, char *pszVer);
-	void ValidateCDKey();
+	void PlayGameStartupSound();
 
 	CreateInterfaceFn m_GameFactory;
 
-	bool m_bPlayGameStartupSound : 1;
-	bool m_bTryingToLoadFriends : 1;
-	bool m_bActivatedUI : 1;
-	bool m_bHasSavedThisMenuSession : 1;
-	bool m_bOpenProgressOnStart : 1;
+	bool m_bPlayGameStartupSound;
+	bool m_bActivatedUI;
+	bool m_bHasSavedThisMenuSession;
+	bool m_bLoading;
+	// After a load: keep the UI (showing the last game frame) up until the
+	// client is in game and draws the world, then hide it.
+	bool m_bHideAfterLoad = false;
+	int m_nHideAfterLoadFrames = 0;
+	double m_flHideAfterLoadDeadline = 0;
+	bool m_bShowProgressText;
 
-	int m_iGameIP;
-	int m_iGameConnectionPort;
-	int m_iGameQueryPort;
-	
-	int m_iFriendsLoadPauseFrames;
-
-	char m_szPreviousStatusText[128];
-	char m_szPlatformDir[MAX_PATH];
-
-	vgui::DHANDLE<class CCDKeyEntryDialog> m_hCDKeyEntryDialog;
+	float m_flLastProgress;
+	std::string m_LastStatusText;
+	std::string m_LastStateJson;
+	double m_flNextStatePoll;
 };
 
-// Purpose: singleton accessor
 extern CGameUI &GameUI();
 
-// expose client interface
 extern IGameClientExports *GameClientExports();
-
 
 #endif // GAMEUI_INTERFACE_H

@@ -1,57 +1,72 @@
 //-----------------------------------------------------------------------------
 //	GAMEUI.VPC
 //
-//	Project Script
+//	HTML GameUI: menus, dialogs, loading screen and console are HTML/CSS/JS
+//	rendered off-screen by Chromium Embedded Framework (CEF).
+//
+//	Prerequisites (done by build_htmlui_thirdparty.bat):
+//	  * thirdparty\cef                     CEF binary distribution
+//	  * gameui\cefbridge\out\lib\<config>  htmlhost.lib + libcef_dll_wrapper.lib
+//	  * gameui\cefbridge\out\bin\Release   gameui_cefsub.exe
 //-----------------------------------------------------------------------------
 
 $macro SRCDIR		".."
 $Macro OUTBINDIR	"$SRCDIR\..\game\bin"
-$Macro LIBJPEGSRCDIR	"$SRCDIR\thirdparty\libjpeg-turbo"
-$Macro LIBJPEGSRC2DIR	"$LIBJPEGSRCDIR\out"
-$Macro LIBJPEGOUTDIR	"$LIBJPEGSRCDIR\out\Release"
-$Macro LIBPNGSRCDIR		"$SRCDIR\thirdparty\libpng"
-$Macro LIBPNGSRC2DIR	"$LIBPNGSRCDIR\out"
-$Macro LIBPNGOUTDIR		"$LIBPNGSRCDIR\out\Release"
-$Macro SDL3SRCDIR		"$SRCDIR\thirdparty\SDL"
-$Macro SDL3OUTDIR		"$SDL3SRCDIR\out\Release"
-$Macro ZLIBSRCDIR		"$SRCDIR\thirdparty\zlib"
-$Macro ZLIBSRC2DIR		"$ZLIBSRCDIR\out"
-$Macro ZLIBOUTDIR		"$ZLIBSRCDIR\out\Release"
+$Macro GAMEDIR		"$SRCDIR\..\game"
+$Macro CEFDIR		"$SRCDIR\thirdparty\cef"
+$Macro CEFBRIDGEOUT	"$SRCDIR\gameui\cefbridge\out"
 
 $include "$SRCDIR\vpc_scripts\source_dll_base.vpc"
-$Include "$SRCDIR\vpc_scripts\source_saxxyawards.vpc"
-$include "$SRCDIR\vpc_scripts\source_cryptlib_include.vpc"
 
 $Configuration
 {
 	$Compiler
 	{
-		$AdditionalIncludeDirectories	"$BASE;.\;$SRCDIR\vgui2\include;$SRCDIR\vgui2\controls;$SRCDIR\common\GameUI"
-		$AdditionalIncludeDirectories	"$BASE;$LIBJPEGSRCDIR;$LIBJPEGSRC2DIR;$LIBJPEGOUTDIR"
-		$AdditionalIncludeDirectories	"$BASE;$LIBPNGSRCDIR;$LIBPNGSRC2DIR;$LIBPNGOUTDIR"
-		$AdditionalIncludeDirectories	"$BASE;$SDL3SRCDIR;$SDL3SRCDIR\include"	[$SDL]
-		$AdditionalIncludeDirectories	"$BASE;$ZLIBSRCDIR;$ZLIBSRC2DIR;$ZLIBOUTDIR"
-		$PreprocessorDefinitions		"$BASE;GAMEUI_EXPORTS;VERSION_SAFE_STEAM_API_INTERFACES"
+		$AdditionalIncludeDirectories	"$BASE;.\;$SRCDIR\vgui2\include;$SRCDIR\vgui2\controls;$SRCDIR\common\GameUI;$SRCDIR\common"
+		$PreprocessorDefinitions		"$BASE;GAMEUI_EXPORTS"
 
 		$EnableC++Exceptions			"Yes (/EHsc)"
 	}
 
 	$Linker
 	{
-		$AdditionalDependencies			"$BASE Gdi32.lib Shell32.lib Shlwapi.lib Ws2_32.lib User32.lib" [$WINDOWS]
-		$SystemLibraries				"iconv;z" [$OSXALL]	
-		$SystemLibraries				"rt" [$LINUXALL && !$DEDICATED]
-		$GCC_ExtraLinkerFlags			"-L/usr/lib32 -L/usr/lib" [$LINUXALL && !$DEDICATED]
+		$AdditionalDependencies			"$BASE Gdi32.lib Shell32.lib User32.lib Advapi32.lib delayimp.lib htmlhost.lib libcef_dll_wrapper.lib libcef.lib" [$WINDOWS]
+		// libcef.dll lives in bin\<arch>\cef and is loaded explicitly by htmlhost::Init().
+		$DelayLoadedDLL					"$BASE libcef.dll" [$WINDOWS]
 	}
 
-	$PostBuildEvent [!$ANALYZE && $SDL]
+	$PostBuildEvent [!$ANALYZE && $WINDOWS]
 	{
-		$CommandLine		"IF NOT EXIST $QUOTE$OUTBINDIR$QUOTE MKDIR $QUOTE$OUTBINDIR$QUOTE" "\n" \
-							"COPY $SDL3OUTDIR\SDL3.dll $OUTBINDIR\SDL3.dll" "\n"					\
+		$CommandLine		"IF NOT EXIST $QUOTE$OUTBINDIR\cef$QUOTE MKDIR $QUOTE$OUTBINDIR\cef$QUOTE" "\n" \
+							"XCOPY /Y /D /Q $QUOTE$CEFDIR\Release\*.dll$QUOTE $QUOTE$OUTBINDIR\cef\$QUOTE >nul" "\n" \
 							"IF ERRORLEVEL 1 GOTO BuildEventFailed" "\n" \
-							"IF EXIST $SDL3OUTDIR\SDL3.pdb COPY $SDL3OUTDIR\SDL3.pdb $OUTBINDIR\SDL3.pdb" "\n"					\
+							"XCOPY /Y /D /Q $QUOTE$CEFDIR\Release\*.bin$QUOTE $QUOTE$OUTBINDIR\cef\$QUOTE >nul" "\n" \
+							"IF ERRORLEVEL 1 GOTO BuildEventFailed" "\n" \
+							"XCOPY /Y /D /Q $QUOTE$CEFDIR\Release\*.json$QUOTE $QUOTE$OUTBINDIR\cef\$QUOTE >nul" "\n" \
+							"IF ERRORLEVEL 1 GOTO BuildEventFailed" "\n" \
+							"XCOPY /Y /D /Q /E /I $QUOTE$CEFDIR\Resources$QUOTE $QUOTE$OUTBINDIR\cef$QUOTE >nul" "\n" \
+							"IF ERRORLEVEL 1 GOTO BuildEventFailed" "\n" \
+							"XCOPY /Y /D /Q $QUOTE$CEFBRIDGEOUT\bin\Release\gameui_cefsub.exe$QUOTE $QUOTE$OUTBINDIR\cef\$QUOTE >nul" "\n" \
+							"IF ERRORLEVEL 1 GOTO BuildEventFailed" "\n" \
+							"XCOPY /Y /D /Q /E /I $QUOTE$SRCDIR\gameui\htmlui$QUOTE $QUOTE$GAMEDIR\platform\htmlui$QUOTE >nul" "\n" \
 							"IF ERRORLEVEL 1 GOTO BuildEventFailed" "\n" \
 							"$BASE"
+	}
+}
+
+$Configuration "Debug"
+{
+	$Linker
+	{
+		$AdditionalLibraryDirectories	"$BASE;$CEFBRIDGEOUT\lib\Debug;$CEFDIR\Release"
+	}
+}
+
+$Configuration "Release"
+{
+	$Linker
+	{
+		$AdditionalLibraryDirectories	"$BASE;$CEFBRIDGEOUT\lib\Release;$CEFDIR\Release"
 	}
 }
 
@@ -59,206 +74,60 @@ $Project "gameui"
 {
 	$Folder	"Source Files"
 	{
-		$File	"BackgroundMenuButton.cpp"
-		$File	"BasePanel.cpp"
-		$File	"GameConsole.cpp"
 		$File	"GameUI_Interface.cpp"
-		$File	"LogoFile.cpp" [!$POSIX]
+		$File	"GameConsole.cpp"
+		$File	"HtmlUI.cpp"
+		$File	"UiApi.cpp"
+		$File	"UiAssets.cpp"
+		$File	"Json.cpp"
 		$File	"ModInfo.cpp"
-		$File	"MouseMessageForwardingPanel.cpp"
-		$File	"$SRCDIR\tracker\common\msgbuffer.cpp" [!$POSIX]
-		$File	"$SRCDIR\common\netapi.cpp" [!$POSIX]
-		$File	"$SRCDIR\common\GameUI\ObjectList.cpp"
-		$File	"PanelListPanel.cpp"
-		$File	"RunGameEngine.cpp"
-		$File	"$SRCDIR\common\GameUI\scriptobject.cpp"
-		$File	"Sys_Utils.cpp"
-		$File	"TextEntryBox.cpp"
-		$File	"TGAImagePanel.cpp"
 		$File	"$SRCDIR\public\vgui_controls\vgui_controls.cpp"
-		$File	"VGuiSystemModuleLoader.cpp"
-		$File	"BonusMapsDatabase.cpp"
-		$File	"BonusMapsDatabase.h"
-		$File	"$SRCDIR\common\language.cpp"
-		$File	"$SRCDIR\common\imageutils.cpp"
-		$File	"SaveGameBrowserDialog.cpp"
-		$File	"gameui_util.cpp"
-		$File	"gameui_util.h"
 	}
 
 	$Folder	"Header Files"
 	{
-		$File	"BackgroundMenuButton.h"
-		$File	"BasePanel.h"
-		$File	"BaseSaveGameDialog.h"
-		$File	"CDKeyEntryDialog.h"
-		$File	"ChangeGameDialog.h"
-		$File	"CreateMultiplayerGameBotPage.h"
-		$File	"CreateMultiplayerGameDialog.h"
-		$File	"CreateMultiplayerGameGameplayPage.h"
-		$File	"CreateMultiplayerGameServerPage.h"
 		$File	"EngineInterface.h"
 		$File	"GameConsole.h"
 		$File	"GameUI_Interface.h"
-		$File	"LoadingDialog.h"
-		$File	"$SRCDIR\vgui2\src\Memorybitmap.h"
+		$File	"HtmlUI.h"
+		$File	"Json.h"
 		$File	"ModInfo.h"
-		$File	"MouseMessageForwardingPanel.h"
-		$File	"PanelListPanel.h"
-		$File	"$SRCDIR\common\GameUI\scriptobject.h"
-		$File	"Sys_Utils.h"
-		$File	"TextEntryBox.h"
-		$File	"TGAImagePanel.h"
-		$File	"VGuiSystemModuleLoader.h"
-		$File	"SaveGameBrowserDialog.h"
+		$File	"UiApi.h"
+		$File	"UiAssets.h"
+		$File	"cefbridge\htmlhost.h"
 	}
 
 	$Folder	"Public Header Files"
 	{
-		$File	"$SRCDIR\public\iachievementmgr.h"
-		$File	"$SRCDIR\public\game\client\IGameClientExports.h"
 		$File	"$SRCDIR\common\GameUI\IGameUI.h"
+		$File	"$SRCDIR\common\GameUI\IGameConsole.h"
+		$File	"$SRCDIR\common\GameUI\IHtmlHud.h"
 		$File	"$SRCDIR\public\IGameUIFuncs.h"
 		$File	"$SRCDIR\public\tier1\interface.h"
-		$File	"$SRCDIR\common\IObjectContainer.h"
-		$File	"$SRCDIR\common\IRunGameEngine.h"
-		$File	"$SRCDIR\common\IVguiModule.h"
-		$File	"$SRCDIR\common\IVGuiModuleLoader.h"
-		$File	"$SRCDIR\common\GameUI\ObjectList.h"
-		$File	"$SRCDIR\public\savegame_version.h"
-		$File	"$SRCDIR\tracker\common\TrackerMessageFlags.h"
-		$File	"$SRCDIR\common\ValveCDKeyGameAndTerritoryCodes.h"
-		$File	"$SRCDIR\common\language.h"
-		$File	"$SRCDIR\common\imageutils.h"
 	}
 
-	$Folder	"Controls"
+	$Folder	"HTML UI"
 	{
-		$File	"BitmapImagePanel.cpp"
-		$File	"BitmapImagePanel.h"
-		$File	"CommandCheckButton.cpp"
-		$File	"CommandCheckButton.h"
-		$File	"CvarNegateCheckButton.cpp"
-		$File	"CvarNegateCheckButton.h"
-		$File	"$SRCDIR\common\GameUI\cvarslider.cpp"
-		$File	"$SRCDIR\common\GameUI\cvarslider.h"
-		$File	"CvarTextEntry.cpp"
-		$File	"CvarTextEntry.h"
-		$File	"CvarToggleCheckButton.cpp"
-		$File	"CvarToggleCheckButton.h"
-		$File	"HapticControlBox.cpp"
-		$File	"HapticControlBox.h"
-		$File	"KeyToggleCheckButton.cpp"
-		$File	"KeyToggleCheckButton.h"
-		$File	"LabeledCommandComboBox.cpp"
-		$File	"LabeledCommandComboBox.h"
-		$File	"URLButton.cpp"
-		$File	"URLButton.h"
-		$File	"vcontrolslistpanel.cpp"
-		$File	"vcontrolslistpanel.h"
+		$File	"htmlui\index.html"
+		$File	"htmlui\css\framework.css"
+		$File	"htmlui\css\theme.css"
+		$File	"htmlui\js\source.js"
+		$File	"htmlui\js\ui.js"
+		$File	"htmlui\js\app.js"
+		$File	"htmlui\js\sounds.js"
+		$File	"htmlui\hud.html"
+		$File	"htmlui\css\hud.css"
+		$File	"htmlui\js\hud.js"
 	}
 
-	$Folder	"Dialogs"
-	{
-		$File	"BenchmarkDialog.cpp"
-		$File	"BenchmarkDialog.h"
-		$File	"BonusMapsDialog.cpp"
-		$File	"BonusMapsDialog.h"
-		$File	"CommentaryDialog.cpp"
-		$File	"CommentaryDialog.h"
-		$File	"CommentaryExplanationDialog.cpp"
-		$File	"CommentaryExplanationDialog.h"
-		$File	"ContentControlDialog.cpp"
-		$File	"ContentControlDialog.h"
-		$File	"CustomTabExplanationDialog.cpp"
-		$File	"CustomTabExplanationDialog.h"
-		$File	"GameConsoleDialog.cpp"
-		$File	"GameConsoleDialog.h"
-		$File	"LoadGameDialog.cpp"
-		$File	"LoadGameDialog.h"
-		$File	"MultiplayerAdvancedDialog.cpp"
-		$File	"MultiplayerAdvancedDialog.h"
-		$File	"NewGameDialog.cpp"
-		$File	"NewGameDialog.h"
-		$File	"PlayerListDialog.cpp"
-		$File	"PlayerListDialog.h"
-		$File	"SaveGameDialog.cpp"
-		$File	"SaveGameDialog.h"
-		$File	"LoadCommentaryDialog.cpp"
-		$File	"LoadingDialog.cpp"
-		$File	"BaseSaveGameDialog.cpp"
-		$File	"ChangeGameDialog.cpp" [!$POSIX]
-		$File	"CreateMultiplayerGameBotPage.cpp"
-		$File	"CreateMultiplayerGameDialog.cpp"
-		$File	"CreateMultiplayerGameGameplayPage.cpp"
-		$File	"CreateMultiplayerGameServerPage.cpp"
-	}
-
-	$Folder	"Matchmaking"
-	{
-		$File	"matchmaking\achievementsdialog.cpp"
-		$File	"matchmaking\achievementsdialog.h"
-		$File	"matchmaking\basedialog.cpp"
-		$File	"matchmaking\basedialog.h"
-		$File	"matchmaking\dialogmenu.cpp"
-		$File	"matchmaking\dialogmenu.h"
-		$File	"matchmaking\leaderboarddialog.cpp"
-		$File	"matchmaking\leaderboarddialog.h"
-		$File	"matchmaking\matchmakingbasepanel.cpp"
-		$File	"matchmaking\matchmakingbasepanel.h"
-		$File	"matchmaking\pausedialog.cpp"
-		$File	"matchmaking\pausedialog.h"
-		$File	"matchmaking\sessionlobbydialog.cpp"
-		$File	"matchmaking\sessionlobbydialog.h"
-		$File	"matchmaking\sessionoptionsdialog.cpp"
-		$File	"matchmaking\sessionoptionsdialog.h"
-		$File	"matchmaking\sessionbrowserdialog.cpp"
-		$File	"matchmaking\sessionbrowserdialog.h"
-		$File	"matchmaking\welcomedialog.cpp"
-		$File	"matchmaking\welcomedialog.h"
-	}
-
-	$Folder	"Options Dialog"
-	{
-		$File	"OptionsDialog.cpp"
-		$File	"OptionsDialog.h"
-		$File	"OptionsSubAudio.cpp"
-		$File	"OptionsSubAudio.h"
-		$File	"OptionsSubDifficulty.cpp"
-		$File	"OptionsSubDifficulty.h"
-		$File	"OptionsSubGame.cpp"
-		$File	"OptionsSubGame.h"
-		$File	"OptionsSubHaptics.cpp"	[$WINDOWS]
-		$File	"OptionsSubHaptics.h"	[$WINDOWS]
-		$File	"OptionsSubKeyboard.cpp"
-		$File	"OptionsSubKeyboard.h"
-		$File	"OptionsSubMouse.cpp"
-		$File	"OptionsSubMouse.h"
-		$File	"OptionsSubMultiplayer.cpp"
-		$File	"OptionsSubMultiplayer.h"
-		$File	"OptionsSubPortal.cpp"
-		$File	"OptionsSubPortal.h"
-		$File	"OptionsSubVideo.cpp"
-		$File	"OptionsSubVideo.h"
-		$File	"OptionsSubVoice.cpp"
-		$File	"OptionsSubVoice.h"
-	}
-	
 	$Folder	"Link Libraries"
 	{
 		$Lib	bitmap
 		$Lib	mathlib
-		$Lib	matsys_controls
 		$Lib	tier2
 		$Lib	tier3
 		$Lib	vgui_controls
 		$Lib	vtf
 
-		$ImpLib	steam_api  [!$NO_STEAM]
-
-		$Libexternal	"$LIBPNGOUTDIR/libpng16_static" [!$DEDICATED]
-		$Libexternal	"$LIBJPEGOUTDIR/jpeg-static" [!$DEDICATED]
-		$Libexternal	"$SDL3OUTDIR/SDL3" [$SDL]
-		$Libexternal	"$ZLIBOUTDIR/zs" [!$DEDICATED]
 	}
 }

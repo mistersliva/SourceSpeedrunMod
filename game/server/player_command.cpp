@@ -18,6 +18,10 @@
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
+#if defined( HL2_DLL )
+bool GameMovement_IsHL1();  // gamemovement.cpp
+#endif
+
 extern IGameMovement *g_pGameMovement;
 extern CMoveData *g_pMoveData;	// This is a global because it is subclassed by each game.
 extern ConVar sv_noclipduringpause;
@@ -211,6 +215,11 @@ void CPlayerMove::FinishMove( CBasePlayer *player, CUserCmd *ucmd, CMoveData *mo
 
 	// NOTE: Don't copy this.  the movement code modifies its local copy but is not expecting to be authoritative
 	//player->m_flMaxspeed			= move->m_flClientMaxSpeed;
+#if defined( HL2_DLL )
+	// SourceSpeedrunMod HL1 movement does copy it (as the HL1 movement mod does).
+	if ( GameMovement_IsHL1() )
+		player->m_flMaxspeed		= move->m_flClientMaxSpeed;
+#endif
 	player->SetAbsOrigin( move->GetAbsOrigin() );
 	player->SetAbsVelocity( move->m_vecVelocity );
 	player->SetPreviouslyPredictedOrigin( move->GetAbsOrigin() );

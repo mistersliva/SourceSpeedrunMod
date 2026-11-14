@@ -346,4 +346,14 @@ if ERRORLEVEL 1 (
 POPD
 
 
+REM Build HTML GameUI dependencies (CEF + bridge).
+if ["%CMAKE_MSVC_ARCH_NAME%"]==["x64"] (
+  CALL build_htmlui_thirdparty.bat x64
+  if ERRORLEVEL 1 (
+    ECHO Building HTML GameUI thirdparty failed.
+    EXIT /B 1
+  )
+)
+
+
 EXIT /B 0

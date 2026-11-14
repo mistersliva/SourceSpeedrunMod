@@ -21,6 +21,7 @@
 #include "hudelement.h"
 #include "clienteffectprecachesystem.h"
 #include "sourcevr/isourcevirtualreality.h"
+#include "htmlhud.h"
 
 using namespace vgui;
 
@@ -336,6 +337,9 @@ void CHudDamageIndicator::MsgFunc_Damage( bf_read &msg )
 	vecFrom.x = msg.ReadFloat();
 	vecFrom.y = msg.ReadFloat();
 	vecFrom.z = msg.ReadFloat();
+
+	if ( g_HtmlHudHooks.OnDamage )
+		g_HtmlHudHooks.OnDamage( armor, damageTaken, bitsDamage, vecFrom );
 
 	C_BasePlayer *pPlayer = C_BasePlayer::GetLocalPlayer();
 	if ( !pPlayer )

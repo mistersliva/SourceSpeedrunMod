@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SourceSpeedrunMod</title>
+  <link rel="stylesheet" href="css/framework.css">
+  <link rel="stylesheet" href="css/theme.css">
+</head>
+<body class="is-booting">
+  <!-- Fallback art when no background map is running -->
+  <div id="backdrop" aria-hidden="true"></div>
+  <!-- Full-screen engine blur of the game behind the menu (pref ui.bgBlur) -->
+  <div id="bgblur" aria-hidden="true"></div>
+  <div id="vignette" aria-hidden="true"></div>
+
+  <!-- ===================================================== Main / pause menu -->
+  <!-- Icon sprites (stroke icons, 24x24) -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-play" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M10 8.2v7.6l6-3.8z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-resume" viewBox="0 0 24 24"><path d="M7 5v14l12-7z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-load" viewBox="0 0 24 24"><path d="M3 7.5V18a1.5 1.5 0 0 0 1.5 1.5h15A1.5 1.5 0 0 0 21 18V9a1.5 1.5 0 0 0-1.5-1.5H12L10 5H4.5A1.5 1.5 0 0 0 3 6.5z"/><path d="M12 11v6M9.5 14.5 12 17l2.5-2.5"/></symbol>
+    <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 3.5h11l3.5 3.5v12a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 19V5A1.5 1.5 0 0 1 5 3.5z"/><path d="M7.5 3.5v5h8v-5M7 20.5v-6h10v6"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></symbol>
+    <symbol id="i-console" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="1.5"/><path d="m7 9.5 3 2.5-3 2.5M12 15h5"/></symbol>
+    <symbol id="i-quit" viewBox="0 0 24 24"><path d="M12 3.5v8"/><path d="M7.2 6.5a7.5 7.5 0 1 0 9.6 0"/></symbol>
+    <symbol id="i-move" viewBox="0 0 24 24"><path d="m5 6 6 6-6 6M12 6l6 6-6 6"/></symbol>
+    <symbol id="i-disconnect" viewBox="0 0 24 24"><path d="M9 7.5 6.5 5a3.5 3.5 0 0 0-5 5L4 12.5M15 16.5l2.5 2.5a3.5 3.5 0 0 0 5-5L20 11.5M8 16l8-8"/></symbol>
+  </svg>
+
+  <main id="main">
+    <!-- Left column: brand + menu -->
+    <div class="side">
+      <div class="brand">
+        <span class="brand__mark">SSM</span>
+        <span class="brand__rule"></span>
+        <span class="brand__name">Source speedrun<br>mod</span>
+      </div>
+
+      <nav class="mainmenu" id="main-menu" data-nav>
+        <button class="menu__item" data-action="resume" data-when="ingame">Resume</button>
+        <button class="menu__item" data-open="newgame">New game</button>
+        <button class="menu__item" data-open="loadgame">Load game</button>
+        <button class="menu__item" data-open="savegame" data-when="cansave">Save game</button>
+        <button class="menu__item" data-open="options">Settings</button>
+        <button class="menu__item" data-action="console">Console</button>
+        <button class="menu__item" data-action="disconnect" data-when="multiplayer">Disconnect</button>
+        <button class="menu__item" data-action="quit">Quit</button>
+      </nav>
+
+      <!-- Quick settings -->
+      <div class="quick glass" id="quick">
+        <label class="field"><span>Movement</span>
+          <select data-cvar="sv_movement_mode" id="quick-movement"><option value="0">HL2</option><option value="1">HL2 OE</option><option value="2">HL1</option></select></label>
+        <label class="field"><span>Auto bhop</span><span class="switch"><input type="checkbox" data-cvar="sv_autobunnyhopping"><i></i></span></label>
+        <div class="quick__status">
+          <span id="game-subtitle"></span>
+          <span id="status-level"></span>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ===================================================== New game -->
+  <section class="layer layer--wide" data-layer="newgame" hidden>
+    <div class="panel">
+      <header class="panel__header">
+        <h2 data-loc="#GameUI_NewGame">New Game</h2>
+      </header>
+      <div class="panel__body">
+        <div class="chapter-grid" id="chapter-grid"></div>
+      </div>
+      <footer class="panel__footer">
+        <label class="field field--inline" id="difficulty-field">
+          <span data-loc="#GameUI_Difficulty">Difficulty</span>
+          <div class="segmented" id="difficulty">
+            <button data-skill="1" data-loc="#GameUI_Easy">Easy</button>
+            <button data-skill="2" data-loc="#GameUI_Medium">Normal</button>
+            <button data-skill="3" data-loc="#GameUI_Hard">Hard</button>
+          </div>
+        </label>
+        <label class="check"><input type="checkbox" id="commentary"><span></span><span data-loc="#GameUI_Commentary">Commentary</span></label>
+        <div class="spacer"></div>
+        <button class="btn" data-close data-loc="#GameUI_Cancel">Cancel</button>
+        <button class="btn btn--primary" id="start-game" disabled data-loc="#GameUI_StartNewGame">Start New Game</button>
+      </footer>
+    </div>
+  </section>
+
+  <!-- ===================================================== Load game -->
+  <section class="layer" data-layer="loadgame" hidden>
+    <div class="panel">
+      <header class="panel__header">
+        <h2 data-loc="#GameUI_LoadGame">Load Game</h2>
+      </header>
+      <div class="panel__body">
+        <ul class="save-list" id="load-list"></ul>
+      </div>
+      <footer class="panel__footer">
+        <button class="btn btn--danger" id="load-delete" disabled data-loc="#GameUI_Delete">Delete</button>
+        <div class="spacer"></div>
+        <button class="btn" data-close data-loc="#GameUI_Cancel">Cancel</button>
+        <button class="btn btn--primary" id="load-confirm" disabled data-loc="#GameUI_Load">Load Game</button>
+      </footer>
+    </div>
+  </section>
+
+  <!-- ===================================================== Save game -->
+  <section class="layer" data-layer="savegame" hidden>
+    <div class="panel">
+      <header class="panel__header">
+        <h2 data-loc="#GameUI_SaveGame">Save Game</h2>
+      </header>
+      <div class="panel__body">
+        <ul class="save-list" id="save-list"></ul>
+      </div>
+      <footer class="panel__footer">
+        <button class="btn btn--danger" id="save-delete" disabled data-loc="#GameUI_Delete">Delete</button>
+        <div class="spacer"></div>
+        <button class="btn" data-close data-loc="#GameUI_Cancel">Cancel</button>
+        <button class="btn btn--primary" id="save-confirm" data-loc="#GameUI_Save">Save</button>
+      </footer>
+    </div>
+  </section>
+
+  <!-- ===================================================== Options -->
+  <section class="layer layer--wide" data-layer="options" hidden>
+    <div class="panel" data-tabs id="options-tabs">
+      <header class="panel__header">
+        <h2>Settings</h2>
+      </header>
+
+      <nav class="tabs settings__nav">
+        <button data-tab="game" class="is-active">Game</button>
+        <button data-tab="interface">Interface</button>
+        <button data-tab="hud">HUD</button>
+        <button data-tab="timer">Timer</button>
+        <button data-tab="keyboard">Keyboard</button>
+        <button data-tab="mouse">Mouse</button>
+        <button data-tab="audio">Audio</button>
+        <button data-tab="video">Video</button>
+      </nav>
+
+      <div class="settings">
+      <div class="panel__body">
+        <!-- Interface -->
+        <div data-panel="interface" class="form-grid" hidden>
+          <label class="field"><span>Accent colour</span><select data-pref="ui.accent" data-accents></select></label>
+          <label class="field"><span>Font</span>
+            <select data-pref="ui.font"><option value="din">Bahnschrift</option><option value="segoe">Segoe UI</option></select></label>
+          <label class="field"><span>Interface scale</span>
+            <span class="range"><input type="range" id="ui-scale" min="0.8" max="1.3" step="0.05" data-pref="ui.scale" data-format="percent"><output for="ui-scale"></output></span></label>
+          <label class="field"><span>Background dimming</span>
+            <span class="range"><input type="range" id="ui-dim" min="0" max="0.8" step="0.05" data-pref="ui.dim" data-format="percent"><output for="ui-dim"></output></span></label>
+          <hr class="form-rule">
+          <label class="field"><span>Blur background</span><span class="switch"><input type="checkbox" data-pref="ui.bgBlur"><i></i></span></label>
+          <label class="field"><span>Blur intensity</span>
+            <select data-pref="ui.blur"><option value="off">Off</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="max">Maximum</option></select></label>
+          <label class="field"><span>Animations</span><span class="switch"><input type="checkbox" data-pref="ui.animations"><i></i></span></label>
+          <label class="field"><span>Quick settings in main menu</span><span class="switch"><input type="checkbox" data-pref="ui.quick"><i></i></span></label>
+          <div class="field field--action"><span></span><button class="btn" data-pref-reset="ui.">Reset interface</button></div>
+        </div>
+
+        <!-- Speedrun timer (LiveSplit .lss splits) -->
+        <div data-panel="timer" class="form-grid" hidden>
+          <label class="field"><span>Splits (.lss)</span><select data-pref="timer.file" id="splits-file"><option value="">None</option></select></label>
+          <div class="field field--action"><span class="field__hint">LiveSplit files in the mod's splits folder</span>
+            <span class="btn-row"><button class="btn" id="splits-refresh">Refresh</button><button class="btn" id="splits-folder">Open folder</button></span></div>
+          <hr class="form-rule">
+          <label class="field"><span>Timing method</span>
+            <select data-pref="timer.method"><option value="game">Game time (no loads)</option><option value="real">Real time</option></select></label>
+          <label class="field"><span>Auto start on new game</span><span class="switch"><input type="checkbox" data-pref="timer.autoStart"><i></i></span></label>
+          <label class="field"><span>Auto split on new map</span><span class="switch"><input type="checkbox" data-pref="timer.autoSplit"><i></i></span></label>
+          <hr class="form-rule">
+          <label class="field"><span>Splits panel</span><span class="switch"><input type="checkbox" data-pref="timer.panel"><i></i></span></label>
+          <label class="field"><span>Panel position</span>
+            <select data-pref="timer.side"><option value="right">Top right</option><option value="left">Top left</option></select></label>
+          <label class="field"><span>Visible splits</span>
+            <span class="range"><input type="range" id="timer-rows" min="4" max="20" step="1" data-pref="timer.rows" data-format="int"><output for="timer-rows"></output></span></label>
+          <p class="form-note">Hotkeys: bind <b>Timer: start / split</b>, <b>reset</b>, <b>undo</b> and <b>skip</b> in Keyboard → SourceSpeedrunMod (console: timer_split, timer_reset, timer_undo, timer_skip). Best segments, attempts and new personal bests are saved back to the .lss file; the original is kept once as .lss.bak.</p>
+        </div>
+
+        <!-- HUD -->
+        <div data-panel="hud" class="form-grid" hidden>
+          <label class="field"><span>Show speed</span><span class="switch"><input type="checkbox" data-pref="hud.speed"><i></i></span></label>
+          <label class="field"><span>Speed position</span>
+            <select data-pref="hud.speedPos"><option value="bottom">Bottom panel</option><option value="center">Under crosshair</option></select></label>
+          <label class="field"><span>Timer in bottom panel</span>
+            <select data-pref="hud.timerMode"><option value="run">Run timer</option><option value="map">Map time</option><option value="off">Off</option></select></label>
+          <label class="field"><span>Movement mode</span><span class="switch"><input type="checkbox" data-pref="hud.mode"><i></i></span></label>
+          <label class="field"><span>Health and armor</span><span class="switch"><input type="checkbox" data-pref="hud.vitals"><i></i></span></label>
+          <label class="field"><span>Weapon and ammo</span><span class="switch"><input type="checkbox" data-pref="hud.ammo"><i></i></span></label>
+          <hr class="form-rule">
+          <label class="field"><span>Accent colour</span><select data-pref="hud.accent" data-accents></select></label>
+          <label class="field"><span>Panel backgrounds</span><span class="switch"><input type="checkbox" data-pref="hud.panels"><i></i></span></label>
+          <label class="field"><span>HUD scale</span>
+            <span class="range"><input type="range" id="hud-scale" min="0.7" max="1.5" step="0.05" data-pref="hud.scale" data-format="percent"><output for="hud-scale"></output></span></label>
+          <label class="field"><span>HUD opacity</span>
+            <span class="range"><input type="range" id="hud-opacity" min="0.3" max="1" step="0.05" data-pref="hud.opacity" data-format="percent"><output for="hud-opacity"></output></span></label>
+          <div class="field field--action"><span></span><button class="btn" data-pref-reset="hud.">Reset HUD</button></div>
+        </div>
+
+        <!-- Video -->
+        <div data-panel="video" class="form-grid">
+          <h3 class="form-section">Display</h3>
+          <label class="field"><span data-loc="#GameUI_Resolution">Resolution</span>
+            <select id="video-resolution"></select></label>
+          <label class="field"><span data-loc="#GameUI_DisplayMode">Display mode</span>
+            <select id="video-mode">
+              <option value="fullscreen" data-loc="#GameUI_Fullscreen">Fullscreen</option>
+              <option value="windowed" data-loc="#GameUI_Windowed">Windowed</option>
+              <option value="borderless">Windowed (borderless)</option>
+            </select></label>
+          <div class="field field--action"><span></span><button class="btn btn--primary" id="video-apply" disabled data-loc="#GameUI_Apply">Apply</button></div>
+          <label class="field"><span>Gamma (lower is brighter)</span>
+            <span class="range"><input type="range" id="gamma" min="1.6" max="2.6" step="0.05" data-cvar="mat_monitorgamma" data-format="fixed2" class="is-inverted"><output for="gamma"></output></span></label>
+          <label class="field"><span>Field of view</span>
+            <span class="range"><input type="range" id="fov" min="75" max="110" step="1" data-cvar="fov_desired" data-format="int"><output for="fov"></output></span></label>
+          <label class="field"><span>Max FPS</span>
+            <span class="range"><input type="range" id="fpsmax" min="30" max="1000" step="10" data-cvar="fps_max" data-format="int"><output for="fpsmax"></output></span></label>
+          <label class="field"><span data-loc="#GameUI_Wait_VSync">Wait for vertical sync</span><span class="switch"><input type="checkbox" data-cvar="mat_vsync"><i></i></span></label>
+
+          <h3 class="form-section" data-loc="#GameUI_AdvancedEllipsis">Advanced</h3>
+          <label class="field"><span data-loc="#GameUI_Model_Detail">Model detail</span>
+            <select data-cvar="r_rootlod"><option value="2" data-loc="#GameUI_Low">Low</option><option value="1" data-loc="#GameUI_Medium">Medium</option><option value="0" data-loc="#GameUI_High">High</option></select></label>
+          <label class="field"><span data-loc="#GameUI_Texture_Detail">Texture detail</span>
+            <select data-cvar="mat_picmip"><option value="2" data-loc="#GameUI_Low">Low</option><option value="1" data-loc="#GameUI_Medium">Medium</option><option value="0" data-loc="#GameUI_High">High</option><option value="-1" data-loc="#GameUI_Ultra">Very High</option></select></label>
+          <label class="field"><span data-loc="#GameUI_Shader_Detail">Shader detail</span>
+            <select data-cvar="mat_reducefillrate"><option value="1" data-loc="#GameUI_Low">Low</option><option value="0" data-loc="#GameUI_High">High</option></select></label>
+          <label class="field"><span data-loc="#GameUI_Water_Detail">Water detail</span>
+            <select data-cvar="r_waterforceexpensive"><option value="0">Reflect world</option><option value="1">Reflect all</option></select></label>
+          <label class="field"><span data-loc="#GameUI_Shadow_Detail">Shadow detail</span>
+            <select data-cvar="r_shadowrendertotexture"><option value="0" data-loc="#GameUI_Low">Low</option><option value="1" data-loc="#GameUI_High">High</option></select></label>
+          <label class="field"><span data-loc="#GameUI_Antialiasing_Mode">Antialiasing</span>
+            <select data-cvar="mat_antialias"><option value="0" data-loc="#GameUI_None">None</option><option value="2">2× MSAA</option><option value="4">4× MSAA</option><option value="8">8× MSAA</option></select></label>
+          <label class="field"><span data-loc="#GameUI_Filtering_Mode">Texture filtering</span>
+            <select data-cvar="mat_forceaniso"><option value="1">Trilinear</option><option value="2">Anisotropic 2×</option><option value="4">Anisotropic 4×</option><option value="8">Anisotropic 8×</option><option value="16">Anisotropic 16×</option></select></label>
+          <label class="field"><span data-loc="#GameUI_HDR">High dynamic range</span>
+            <select data-cvar="mat_hdr_level"><option value="0" data-loc="#GameUI_hdr_level0">None</option><option value="1" data-loc="#GameUI_hdr_level1">Bloom</option><option value="2" data-loc="#GameUI_hdr_level2">Full</option></select></label>
+          <label class="field"><span data-loc="#GameUI_MotionBlur">Motion blur</span><span class="switch"><input type="checkbox" data-cvar="mat_motion_blur_enabled"><i></i></span></label>
+          <label class="field"><span data-loc="#GameUI_ColorCorrection">Color correction</span><span class="switch"><input type="checkbox" data-cvar="mat_colorcorrection"><i></i></span></label>
+        </div>
+
+        <!-- Audio -->
+        <div data-panel="audio" class="form-grid" hidden>
+          <label class="field"><span data-loc="#GameUI_GameVolume">Game volume</span>
+            <span class="range"><input type="range" id="vol" min="0" max="1" step="0.01" data-cvar="volume" data-format="percent"><output for="vol"></output></span></label>
+          <label class="field"><span data-loc="#GameUI_MusicVolume">Music volume</span>
+            <span class="range"><input type="range" id="musvol" min="0" max="1" step="0.01" data-cvar="snd_musicvolume" data-format="percent"><output for="musvol"></output></span></label>
+          <label class="field"><span>Interface sounds</span>
+            <span class="range"><input type="range" id="uivol" min="0" max="1" step="0.01" data-format="percent"><output for="uivol"></output></span></label>
+          <label class="field"><span data-loc="#GameUI_SpeakerConfiguration">Speaker configuration</span>
+            <select data-cvar="snd_surround_speakers"><option value="0" data-loc="#GameUI_Headphones">Headphones</option><option value="2" data-loc="#GameUI_2Speakers">2 Speakers</option><option value="4" data-loc="#GameUI_4Speakers">4 Speakers</option><option value="5" data-loc="#GameUI_5Speakers">5.1 Speakers</option><option value="7" data-loc="#GameUI_7Speakers">7.1 Speakers</option></select></label>
+          <label class="field"><span data-loc="#GameUI_SoundQuality">Sound quality</span>
+            <select data-cvar="snd_pitchquality"><option value="0" data-loc="#GameUI_Medium">Medium</option><option value="1" data-loc="#GameUI_High">High</option></select></label>
+          <label class="field"><span data-loc="#GameUI_Captioning">Captions</span>
+            <select id="captions"><option value="0" data-loc="#GameUI_NoClosedCaptions">No captions</option><option value="1" data-loc="#GameUI_SubtitlesAndSoundEffects">Subtitles and sound effects</option><option value="2" data-loc="#GameUI_Subtitles">Subtitles only</option></select></label>
+        </div>
+
+        <!-- Mouse -->
+        <div data-panel="mouse" class="form-grid" hidden>
+          <label class="field"><span data-loc="#GameUI_MouseSensitivity">Mouse sensitivity</span>
+            <span class="range"><input type="range" id="sens" min="0.1" max="10" step="0.05" data-cvar="sensitivity" data-format="fixed2"><output for="sens"></output></span></label>
+          <label class="field"><span>Zoom sensitivity</span>
+            <span class="range"><input type="range" id="zsens" min="0.1" max="2" step="0.05" data-cvar="zoom_sensitivity_ratio" data-format="fixed2"><output for="zsens"></output></span></label>
+          <label class="field"><span data-loc="#GameUI_ReverseMouse">Reverse mouse</span><span class="switch"><input type="checkbox" data-cvar="m_pitch" data-on="-0.022" data-off="0.022"><i></i></span></label>
+          <label class="field"><span>Raw input</span><span class="switch"><input type="checkbox" data-cvar="m_rawinput"><i></i></span></label>
+          <label class="field"><span data-loc="#GameUI_MouseFilter">Mouse filter</span><span class="switch"><input type="checkbox" data-cvar="m_filter"><i></i></span></label>
+        </div>
+
+        <!-- Keyboard -->
+        <div data-panel="keyboard" hidden>
+          <div class="binds" id="binds"></div>
+        </div>
+
+        <!-- Game -->
+        <div data-panel="game" class="form-grid" hidden>
+          <h3 class="form-section">SourceSpeedrunMod</h3>
+          <label class="field"><span>Movement physics</span>
+            <select data-cvar="sv_movement_mode"><option value="0">Half-Life 2 — accelerated back hop</option><option value="1">Half-Life 2 old engine — accelerated forward hop</option><option value="2">Half-Life 1 — bunnyhop cap</option></select></label>
+          <label class="field"><span>Auto bunnyhop</span><span class="switch"><input type="checkbox" data-cvar="sv_autobunnyhopping"><i></i></span></label>
+          <hr class="form-rule">
+          <label class="field" id="skill-field"><span data-loc="#GameUI_Difficulty">Difficulty</span>
+            <select data-cvar="skill"><option value="1" data-loc="#GameUI_Easy">Easy</option><option value="2" data-loc="#GameUI_Medium">Normal</option><option value="3" data-loc="#GameUI_Hard">Hard</option></select></label>
+          <label class="field"><span data-loc="#GameUI_AutoAim">Aim assistance</span><span class="switch"><input type="checkbox" data-cvar="sk_autoaim_mode"><i></i></span></label>
+          <label class="field"><span data-loc="#GameUI_Crosshair">Crosshair</span><span class="switch"><input type="checkbox" data-cvar="crosshair"><i></i></span></label>
+          <label class="field"><span>Quick info (health / ammo)</span><span class="switch"><input type="checkbox" data-cvar="hud_quickinfo"><i></i></span></label>
+          <label class="field"><span>View bob</span><span class="switch"><input type="checkbox" data-cvar="cl_viewbob_enabled"><i></i></span></label>
+          <label class="field"><span data-loc="#GameUI_DeveloperConsole">Enable developer console (~)</span><span class="switch"><input type="checkbox" data-cvar="con_enable"><i></i></span></label>
+        </div>
+      </div>
+      </div>
+
+      <footer class="panel__footer">
+        <button class="btn btn--text" data-close>Back</button>
+        <div class="spacer"></div>
+        <button class="btn" id="binds-defaults" hidden data-loc="#GameUI_SetDefaults">Use Defaults</button>
+        <button class="btn btn--primary" data-close>Apply</button>
+      </footer>
+    </div>
+  </section>
+
+  <!-- ===================================================== Console -->
+  <section class="layer layer--console" data-layer="console" hidden>
+    <div class="console">
+      <header class="console__header">
+        <h2 data-loc="#GameUI_Console">Console</h2>
+        <div class="spacer"></div>
+        <button class="btn btn--text" id="console-clear">Clear</button>
+        <button class="btn btn--text" data-close>Close</button>
+      </header>
+      <div class="console__output" id="console-output" tabindex="-1"></div>
+      <div class="console__input">
+        <span class="console__prompt">]</span>
+        <input id="console-input" type="text" autocomplete="off" spellcheck="false" autofocus>
+        <ul class="console__suggest" id="console-suggest" hidden></ul>
+        <button class="btn" id="console-submit" data-loc="#GameUI_Submit">Submit</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================== Loading screen -->
+  <!-- Loads without the loading screen (save/load in game): last frame + label -->
+  <div id="quickload" aria-hidden="true">Loading</div>
+
+  <div id="loading" hidden>
+    <div class="loading__card">
+      <div class="loading__title" data-loc="#GameUI_Loading">Loading…</div>
+      <div class="progress"><div class="progress__bar" id="loading-bar"></div></div>
+      <div class="loading__text" id="loading-text"></div>
+    </div>
+  </div>
+
+  <div id="modal-root"></div>
+  <div id="toast-root"></div>
+
+  <script src="js/sounds.js"></script>
+  <script src="js/source.js"></script>
+  <script src="js/prefs.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

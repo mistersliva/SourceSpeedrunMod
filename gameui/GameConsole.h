@@ -1,9 +1,7 @@
-//========= Copyright Valve Corporation, All rights reserved. ============//
+// Copyright Source Authors. All rights reserved.
 //
-// Purpose: 
-//
-// $NoKeywords: $
-//=============================================================================//
+// IGameConsole implementation backed by the HTML GameUI. Console output is
+// captured through IConsoleDisplayFunc and streamed to the page.
 
 #ifndef GAMECONSOLE_H
 #define GAMECONSOLE_H
@@ -11,49 +9,44 @@
 #pragma once
 #endif
 
+#include <mutex>
+#include <string>
+
 #include "GameUI/IGameConsole.h"
+#include "icvar.h"
 
-class CGameConsoleDialog;
-
-//-----------------------------------------------------------------------------
-// Purpose: VGui implementation of the game/dev console
-//-----------------------------------------------------------------------------
-class CGameConsole : public IGameConsole
+class CGameConsole : public IGameConsole, public IConsoleDisplayFunc
 {
 public:
-	CGameConsole() : m_pConsole{nullptr} {} 
+	CGameConsole();
 	~CGameConsole() = default;
 
-	// sets up the console for use
+	// IGameConsole
 	void Initialize() override;
-
-	// activates the console, makes it visible and brings it to the foreground
 	void Activate() override;
-	// hides the console
 	void Hide() override;
-	// clears the console
 	void Clear() override;
-
-	// returns true if the console is currently in focus
 	bool IsConsoleVisible() override;
-
-	// dimhotepus: Use strict type.
 	void SetParent( vgui::VPANEL parent ) override;
-
-	// dimhotepus: Initialize with parent to scale UI.
-	// sets up the console for use
 	void Initialize( vgui::VPANEL parent, const char *panelModule ) override;
-
-	// dimhotepus: Pair with initialize.
 	void Shutdown() override;
 
-	// activates the console after a delay
-	void ActivateDelayed(float time);
+	// IConsoleDisplayFunc
+	void ColorPrint( const Color &clr, const char *pMessage ) override;
+	void Print( const char *pMessage ) override;
+	void DPrint( const char *pMessage ) override;
 
-	static void OnCmdCondump();
+	// Writes the captured console text to condumpNNN.txt.
+	void Dump();
+
 private:
+	void Append( const char *text, int r, int g, int b, int a, bool developer );
 
-	CGameConsoleDialog *m_pConsole;
+	bool m_bInitialized;
+	bool m_bVisible;
+
+	std::mutex m_HistoryMutex;
+	std::string m_History;  // plain-text scrollback for condump
 };
 
 extern CGameConsole &GameConsole();

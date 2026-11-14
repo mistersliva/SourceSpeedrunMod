@@ -42,12 +42,122 @@ extern IFileSystem *filesystem;
 // player->CurrentCommandNumber() in the meantime.
 #define tickcount USE_PLAYER_CURRENT_COMMAND_NUMBER__INSTEAD_OF_TICKCOUNT
 
+// SourceSpeedrunMod: jump automatically on landing while jump is held.
+ConVar sv_autobunnyhopping( "sv_autobunnyhopping", "0", FCVAR_REPLICATED | FCVAR_NOTIFY | FCVAR_ARCHIVE,
+	"Jump again automatically on landing while the jump button is held." );
+
+#if defined( GAME_DLL )
+CON_COMMAND( autobhop_toggle, "Toggle automatic bunnyhopping." )
+{
+	sv_autobunnyhopping.SetValue( !sv_autobunnyhopping.GetBool() );
+	Msg( "Auto bunnyhop: %s\n", sv_autobunnyhopping.GetBool() ? "on" : "off" );
+}
+#endif
+
 #if defined( HL2_DLL )
 ConVar xc_uncrouch_on_jump( "xc_uncrouch_on_jump", "1", FCVAR_ARCHIVE, "Uncrouch when jump occurs" );
 #endif
 
 #if defined( HL2_DLL ) || defined( HL2_CLIENT_DLL )
 ConVar player_limit_jump_speed( "player_limit_jump_speed", "1", FCVAR_REPLICATED );
+
+//-----------------------------------------------------------------------------
+// SourceSpeedrunMod: switchable movement physics.
+//   0 = Half-Life 2 (Orange Box / SDK 2013). The jump boost is clamped to the
+//       max speed; with backwards input the clamp turns into a forward push,
+//       which gives accelerated back hopping (ABH).
+//   1 = Half-Life 2 old engine (2004). Same boost without the clamp, so every
+//       forward jump adds speed: accelerated forward hopping (AFH).
+//   2 = Half-Life 1, ported from the sdk-2013-ce HL1-movement mod: 800
+//       gravity, sv_maxspeed (320) run / 100 walk, air acceleration 30 with
+//       a doubled add cap, sqrt(2*800*45) jumps without boost, holding jump
+//       re-jumps, and the classic instant-in-air duck (CHL2GameMovement
+//       overrides in hl2/hl_gamemovement.cpp).
+//-----------------------------------------------------------------------------
+enum EMovementMode
+{
+	MOVEMENT_HL2 = 0,
+	MOVEMENT_HL2_OLDENGINE,
+	MOVEMENT_HL1,
+	MOVEMENT_COUNT
+};
+
+ConVar sv_movement_mode( "sv_movement_mode", "0", FCVAR_REPLICATED | FCVAR_NOTIFY | FCVAR_ARCHIVE,
+	"Movement physics: 0 = Half-Life 2 (accelerated back hop), 1 = Half-Life 2 old engine (accelerated forward hop), 2 = Half-Life 1.",
+	true, 0, true, MOVEMENT_COUNT - 1 );
+
+static EMovementMode GetMovementMode()
+{
+	return static_cast<EMovementMode>( clamp( sv_movement_mode.GetInt(), 0, MOVEMENT_COUNT - 1 ) );
+}
+
+// Used by CHL2GameMovement (hl2/hl_gamemovement.cpp) for the HL1 overrides.
+bool GameMovement_IsHL1()
+{
+	return GetMovementMode() == MOVEMENT_HL1;
+}
+
+// HL1 mode values from the sdk-2013-ce mod (movevars_shared.cpp defaults there).
+static constexpr float HL1_GRAVITY = 800.0f;
+static constexpr float HL1_AIRACCELERATE = 30.0f;
+#endif
+
+// Player gravity. The mod sets sv_gravity to 800; here only the player gets
+// it in HL1 mode (scaled with sv_gravity), so props and NPCs keep HL2's 600.
+static float GetMovementGravity()
+{
+#if defined( HL2_DLL ) || defined( HL2_CLIENT_DLL )
+	if ( GetMovementMode() == MOVEMENT_HL1 )
+		return HL1_GRAVITY * ( GetCurrentGravity() / 600.0f );
+#endif
+	return GetCurrentGravity();
+}
+
+#if defined( HL2_DLL ) || defined( HL2_CLIENT_DLL )
+
+#if defined( GAME_DLL )
+static const char *const s_szMovementModeNames[MOVEMENT_COUNT] = {
+	"Half-Life 2 (ABH)",
+	"Half-Life 2 Old Engine (AFH)",
+	"Half-Life 1",
+};
+
+static void SetMovementMode( int mode )
+{
+	mode = ( ( mode % MOVEMENT_COUNT ) + MOVEMENT_COUNT ) % MOVEMENT_COUNT;
+	if ( GetMovementMode() == MOVEMENT_HL1 && mode != MOVEMENT_HL1 )
+	{
+		for ( int i = 1; i <= gpGlobals->maxClients; ++i )
+		{
+			CBasePlayer *pl = UTIL_PlayerByIndex( i );
+			if ( pl )
+				pl->SetMaxSpeed( 190.0f );	// HL2_NORM_SPEED
+		}
+	}
+	sv_movement_mode.SetValue( mode );
+	Msg( "Movement: %s\n", s_szMovementModeNames[mode] );
+}
+
+CON_COMMAND( movement_cycle, "Switch to the next movement mode (HL2 -> HL2 old engine -> HL1)." )
+{
+	SetMovementMode( sv_movement_mode.GetInt() + 1 );
+}
+
+CON_COMMAND( movement_hl2, "Half-Life 2 movement (accelerated back hop)." )
+{
+	SetMovementMode( MOVEMENT_HL2 );
+}
+
+CON_COMMAND( movement_oe, "Half-Life 2 old engine movement (accelerated forward hop)." )
+{
+	SetMovementMode( MOVEMENT_HL2_OLDENGINE );
+}
+
+CON_COMMAND( movement_hl1, "Half-Life 1 movement." )
+{
+	SetMovementMode( MOVEMENT_HL1 );
+}
+#endif // GAME_DLL
 #endif
 
 // option_duck_method is a carrier convar. Its sole purpose is to serve an easy-to-flip
@@ -1131,6 +1241,10 @@ void CGameMovement::ProcessMovement( CBasePlayer *pPlayer, CMoveData *pMove )
 
 	mv = pMove;
 	mv->m_flMaxSpeed = pPlayer->GetPlayerMaxSpeed();
+#if defined( HL2_DLL ) || defined( HL2_CLIENT_DLL )
+	if ( GetMovementMode() == MOVEMENT_HL1 )
+		mv->m_flMaxSpeed = sv_maxspeed.GetFloat();
+#endif
 
 	// CheckV( player->CurrentCommandNumber(), "StartPos", mv->GetAbsOrigin() );
 
@@ -1235,7 +1349,7 @@ void CGameMovement::StartGravity( void )
 
 	// Add gravity so they'll be in the correct position during movement
 	// yes, this 0.5 looks wrong, but it's not.  
-	mv->m_vecVelocity[2] -= (ent_gravity * GetCurrentGravity() * 0.5F * gpGlobals->frametime );
+	mv->m_vecVelocity[2] -= (ent_gravity * GetMovementGravity() * 0.5F * gpGlobals->frametime );
 	mv->m_vecVelocity[2] += player->GetBaseVelocity()[2] * gpGlobals->frametime;
 
 	Vector temp = player->GetBaseVelocity();
@@ -1673,7 +1787,7 @@ void CGameMovement::FinishGravity( void )
 		ent_gravity = 1.0F;
 
 	// Get the correct velocity for the end of the dt 
-  	mv->m_vecVelocity[2] -= (ent_gravity * GetCurrentGravity() * gpGlobals->frametime * 0.5F);
+  	mv->m_vecVelocity[2] -= (ent_gravity * GetMovementGravity() * gpGlobals->frametime * 0.5F);
 
 	CheckVelocity();
 }
@@ -1714,9 +1828,14 @@ void CGameMovement::AirAccelerate( Vector& wishdir, float wishspeed, float accel
 	// Determine acceleration speed after acceleration
 	accelspeed = accel * wishspeed * gpGlobals->frametime * player->m_surfaceFriction;
 
-	// Cap it
-	if (accelspeed > addspeed)
-		accelspeed = addspeed;
+	// Cap it (the HL1 mod allows up to twice the missing speed)
+	float flMaxAdd = addspeed;
+#if defined( HL2_DLL ) || defined( HL2_CLIENT_DLL )
+	if ( GetMovementMode() == MOVEMENT_HL1 )
+		flMaxAdd = addspeed * 2;
+#endif
+	if (accelspeed > flMaxAdd)
+		accelspeed = flMaxAdd;
 	
 	// Adjust pmove vel.
 	for (i=0 ; i<3 ; i++)
@@ -1766,7 +1885,12 @@ void CGameMovement::AirMove( void )
 		wishspeed = mv->m_flMaxSpeed;
 	}
 	
-	AirAccelerate( wishdir, wishspeed, sv_airaccelerate.GetFloat() );
+	float flAirAccelerate = sv_airaccelerate.GetFloat();
+#if defined( HL2_DLL ) || defined( HL2_CLIENT_DLL )
+	if ( GetMovementMode() == MOVEMENT_HL1 )
+		flAirAccelerate = HL1_AIRACCELERATE;
+#endif
+	AirAccelerate( wishdir, wishspeed, flAirAccelerate );
 
 	// Add in any base velocity to the current velocity.
 	VectorAdd(mv->m_vecVelocity, player->GetBaseVelocity(), mv->m_vecVelocity );
@@ -2384,7 +2508,8 @@ bool CGameMovement::CheckJumpButton( void )
 		return false;
 #endif
 
-	if ( mv->m_nOldButtons & IN_JUMP )
+	// Holding jump re-jumps on landing when auto bunnyhopping is enabled.
+	if ( ( mv->m_nOldButtons & IN_JUMP ) && !sv_autobunnyhopping.GetBool() )
 		return false;		// don't pogo stick
 
 	// Cannot jump will in the unduck transition.
@@ -2426,6 +2551,7 @@ bool CGameMovement::CheckJumpButton( void )
 		flMul = sqrt(2 * GetCurrentGravity() * GAMEMOVEMENT_JUMP_HEIGHT);
 	}
 
+
 	// Acclerate upward
 	// If we are ducking...
 	float startz = mv->m_vecVelocity[2];
@@ -2446,7 +2572,8 @@ bool CGameMovement::CheckJumpButton( void )
 
 	// Add a little forward velocity based on your current forward velocity - if you are not sprinting.
 #if defined( HL2_DLL ) || defined( HL2_CLIENT_DLL )
-	if ( gpGlobals->maxClients == 1 )
+	const EMovementMode eMovementMode = GetMovementMode();
+	if ( gpGlobals->maxClients == 1 && eMovementMode != MOVEMENT_HL1 )
 	{
 		CHLMoveData *pMoveData = ( CHLMoveData* )mv;
 		Vector vecForward;
@@ -2461,8 +2588,9 @@ bool CGameMovement::CheckJumpButton( void )
 		float flMaxSpeed = mv->m_flMaxSpeed + ( mv->m_flMaxSpeed * flSpeedBoostPerc );
 		float flNewSpeed = ( flSpeedAddition + mv->m_vecVelocity.Length2D() );
 
-		// If we're over the maximum, we want to only boost as much as will get us to the goal speed
-		if ( flNewSpeed > flMaxSpeed )
+		// If we're over the maximum, we want to only boost as much as will get us to the goal speed.
+		// The 2004 engine had no such clamp (accelerated forward hopping).
+		if ( eMovementMode == MOVEMENT_HL2 && flNewSpeed > flMaxSpeed )
 		{
 			flSpeedAddition -= flNewSpeed - flMaxSpeed;
 		}
@@ -3082,7 +3210,7 @@ void CGameMovement::AddGravity( void )
 		ent_gravity = 1.0;
 
 	// Add gravity incorrectly
-	mv->m_vecVelocity[2] -= (ent_gravity * GetCurrentGravity() * gpGlobals->frametime);
+	mv->m_vecVelocity[2] -= (ent_gravity * GetMovementGravity() * gpGlobals->frametime);
 	mv->m_vecVelocity[2] += player->GetBaseVelocity()[2] * gpGlobals->frametime;
 	Vector temp = player->GetBaseVelocity();
 	temp[2] = 0;
@@ -4008,7 +4136,12 @@ void CGameMovement::FixPlayerCrouchStuck( bool upward )
 		return;
 	
 	VectorCopy( mv->GetAbsOrigin(), test );	
-	for ( i = 0; i < 36; i++ )
+	int nSteps = 36;
+#if defined( HL2_DLL ) || defined( HL2_CLIENT_DLL )
+	if ( GetMovementMode() == MOVEMENT_HL1 )
+		nSteps = 72;
+#endif
+	for ( i = 0; i < nSteps; i++ )
 	{
 		Vector org = mv->GetAbsOrigin();
 		org.z += direction;
@@ -4708,7 +4841,7 @@ void CGameMovement::PerformFlyCollisionResolution( trace_t &pm, Vector &move )
 	if (pm.plane.normal[2] > 0.7)
 	{		
 		base.Init();
-		if (mv->m_vecVelocity[2] < GetCurrentGravity() * gpGlobals->frametime)
+		if (mv->m_vecVelocity[2] < GetMovementGravity() * gpGlobals->frametime)
 		{
 			// we're rolling on the ground, add static friction.
 			SetGroundEntity( &pm ); 

@@ -15,6 +15,7 @@
 #include "vgui_basepanel.h"
 #include "hud_crosshair.h"
 #include "vgui/ISurface.h"
+#include "htmlhud.h"
 
 #if defined( REPLAY_ENABLED )
 #include "replay/ienginereplay.h"
@@ -39,6 +40,11 @@ static void FovChanged_Callback( IConVar *pConVar, const char *pOldString, float
 		engine->ServerCmd( VarArgs( "fov %f\n", var.GetFloat() ) );
 	}
 }
+
+HtmlHudHooks_t g_HtmlHudHooks;
+
+// Native HUD panels currently suppressed in favour of the HTML HUD.
+static CUtlVector<vgui::Panel *> s_HtmlHudSuppressed;
 
 static ConVar fov_watcher( "_fov", "0", 0, "Automates fov command to server.", FovChanged_Callback );
 
@@ -65,16 +71,45 @@ void CHud::Think(void)
 
 		m_HudList[i]->SetActive( visible );
 
-		// If it's a vgui panel, hide/show as appropriate
 		vgui::Panel *pPanel = dynamic_cast<vgui::Panel*>(m_HudList[i]);
-		if ( pPanel && pPanel->IsVisible() != visible )
-		{
-			pPanel->SetVisible( visible );
-		}
-		else if ( !pPanel )
+		if ( !pPanel )
 		{
 			// All HUD elements should now derive from vgui!!!
 			Assert( 0 );
+		}
+
+		// Elements replaced by the HTML HUD are hidden. Weapon selection must
+		// keep thinking (its selection timeout runs in OnThink), so it stays
+		// visible but does not paint.
+		const bool bSuppress = pPanel && g_HtmlHudHooks.SuppressNative && g_HtmlHudHooks.SuppressNative( m_HudList[i]->GetName() );
+		const bool bKeepThinking = bSuppress && V_strcmp( m_HudList[i]->GetName(), "CHudWeaponSelection" ) == 0;
+		const bool bPanelVisible = visible && ( !bSuppress || bKeepThinking );
+
+		// If it's a vgui panel, hide/show as appropriate
+		if ( pPanel && pPanel->IsVisible() != bPanelVisible )
+		{
+			pPanel->SetVisible( bPanelVisible );
+		}
+
+		if ( pPanel )
+		{
+			const bool bWasSuppressed = s_HtmlHudSuppressed.HasElement( pPanel );
+			if ( bWasSuppressed != bKeepThinking )
+			{
+				pPanel->SetPaintEnabled( !bKeepThinking );
+				if ( bKeepThinking )
+				{
+					s_HtmlHudSuppressed.AddToTail( pPanel );
+				}
+				else
+				{
+					s_HtmlHudSuppressed.FindAndRemove( pPanel );
+				}
+			}
+			if ( bKeepThinking )
+			{
+				pPanel->SetPaintBackgroundEnabled( false );
+			}
 		}
 
 		if ( visible )

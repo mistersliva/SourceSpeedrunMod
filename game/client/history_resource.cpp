@@ -12,6 +12,7 @@
 #include "vgui/ISurface.h"
 #include "iclientmode.h"
 #include "vgui_controls/AnimationController.h"
+#include "htmlhud.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -165,6 +166,9 @@ void CHudHistoryResource::AddToHistory( int iType, const char *szName, int iCoun
 //-----------------------------------------------------------------------------
 void CHudHistoryResource::AddIconToHistory( int iType, int iId, C_BaseCombatWeapon *weapon, int iCount, CHudTexture *icon )
 {
+	if ( g_HtmlHudHooks.OnPickup )
+		g_HtmlHudHooks.OnPickup( iType, iId, weapon, iCount, icon );
+
 	m_bNeedsDraw = true;
 
 	// Check to see if the pic would have to be drawn too high. If so, start again from the bottom

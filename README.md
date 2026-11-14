@@ -1,157 +1,55 @@
-# Obsoletium
+# SourceSpeedrunMod
 
-[![Build](https://github.com/Source-Authors/Obsoletium/actions/workflows/build.yml/badge.svg)](https://github.com/Source-Authors/Obsoletium/actions/workflows/build.yml)
-[![Coverity](https://img.shields.io/coverity/scan/32472.svg)](https://scan.coverity.com/projects/source-authors-obsoletium)
-[![Repo Size](https://img.shields.io/github/repo-size/Source-Authors/Obsoletium.svg)](https://github.com/Source-Authors/Obsoletium)
+SpeedrunMod for Source-based mods. Based on [Obsoletium](https://github.com/Source-Authors/Obsoletium)
+(64-bit Source engine), playing **Half-Life 2** content from your Steam install.
 
-## Notes
+> You need Half-Life 2 on Steam. The mod reads the game content from your Steam
+> library; no Valve game content is included here.
 
-Valve, the Valve logo, Half-Life, the Half-Life logo, the Lambda logo, Steam, the Steam logo, Team Fortress, the Team Fortress logo, Opposing Force, Day of Defeat, the Day of Defeat logo, Counter-Strike, the Counter-Strike logo, Source, the Source logo, Counter-Strike: Condition Zero, Portal, the Portal logo, Dota, the Dota 2 logo, and Defense of the Ancients are trademarks and/or registered trademarks of Valve Corporation. All other trademarks are property of their respective owners. See https://store.steampowered.com/legal for Valve Corporation legal details.
+## Features
 
-This repo is based on Valve's Source Engine from 2018. Please, use this for studying only, not for commercial purposes.
-See https://partner.steamgames.com/doc/sdk/uploading/distributing_source_engine if you want to distribute something using Source Engine.
+- **New game UI in HTML/CSS/JS** (Chromium Embedded Framework) replacing `GameUI.dll`:
+  main/pause menu, settings, new game, load/save, console, loading screen.
+  Source: [`gameui/`](gameui/) (engine side) and [`gameui/htmlui/`](gameui/htmlui/) (pages).
+- **HTML HUD**: health/armor, ammo, timer and speed panel, weapon selection,
+  damage indicators. Everything can be customized in settings (scale, opacity, accent,
+  visible parts).
+- **Switchable movement**, in game or bound to keys (`movement_hl2`, `movement_oe`, `movement_hl1`, `movement_cycle`):
+  - Half-Life 2: accelerated back hopping (ABH),
+  - Half-Life 2 old engine: accelerated forward hopping (AFH),
+  - Half-Life 1 movement (port of an SDK 2013 HL1 movement mod: 800 gravity, 320 run,
+    30 air acceleration, HL1 jump and duck).
+- **Auto bunnyhop** (`sv_autobunnyhopping`, `autobhop_toggle`).
+- **LiveSplit-style timer** with `.lss` splits (`hl2/splits/`): game time without
+  loads, auto start / auto split, best segments and PBs saved back to the file.
+  Hotkeys: `timer_split`, `timer_reset`, `timer_undo`, `timer_skip`.
+- Frosted-glass blur behind menus, faster loads (`cl_load_settle_time`), the last
+  frame stays on screen during save/loads instead of going black.
+- **Launcher** ([`ssm-launcher/`](ssm-launcher/)): Electron app that finds Steam and
+  Half-Life 2, checks ownership after "Sign in through Steam", points the mod at your
+  HL2 install and downloads mod updates.
 
-## Abstract
+## Install (players)
 
-Obsoletium is an open-source, cross-platform game engine.
+1. Install **Half-Life 2** in Steam.
+2. Download the latest release from [Releases](../../releases) and unzip it anywhere.
+3. Run `SSM-Launcher.exe` and press **Play**.
 
-The Obsoletium project uses an [open governance model](./GOVERNANCE.md).
+## Build (developers)
 
-Contributors are expected to act in a collaborative manner to move
-the project forward. We encourage the constructive exchange of contrary
-opinions and compromise.
+The engine builds like upstream Obsoletium; see [BUILDING.md](BUILDING.md) and
+[README.Obsoletium.md](README.Obsoletium.md). For HL2 x64:
 
-**This project has a [Code of Conduct][].**
-
-## Table of contents
-
-* [Support](#support)
-* [Release types](#release-types)
-  * [Download](#download)
-    * [Current releases](#current-releases)
-    * [Custom releases](#custom-releases)
-  * [Verifying binaries](#verifying-binaries)
-* [Building Obsoletium](#building-obsoletium)
-* [Security](#security)
-* [Contributing to Obsoletium](#contributing-to-obsoletium)
-* [Current project team members](#current-project-team-members)
-  * [Collaborators](#collaborators)
-  * [Triagers](#triagers)
-  * [Release keys](#release-keys)
-* [License](#license)
-* [Tools](#tools)
-
-## Support
-
-Looking for help? Check out the
-[instructions for getting support](/docs/contributing/SUPPORT.md).
-
-## Release types
-
-* **Current**: Under active development. Code for the Current release is in the
-  branch for its major version number (for example,
-  [v1.x](https://github.com/Source-Authors/Obsoletium/tree/v1.x)). Obsoletium releases a new
-  major version every 12 months, allowing for breaking changes.
-* **Custom**: You can build code from the Current branch on your own. Use with caution.
-
-Current releases follow [semantic versioning](https://semver.org). A
-member of the Release Team [signs](#release-keys) each Current release.
-
-### Download
-
-Binaries, installers, and source tarballs are available at
-<https://github.com/Source-Authors/Obsoletium/releases>.
-
-#### Current releases
-
-<https://github.com/Source-Authors/Obsoletium/releases>
-
-#### Custom releases
-
-Use your own naming schema.
-
-### Verifying binaries
-
-Downloads contain a `SHASUMS256.txt.asc` file with SHA checksums for the
-files and the releaser PGP signature.
-
-You can import the releaser keys in your default keyring, see
-[Release keys](#release-keys) for commands to how to do that.
-
-Then, you can verify the files you've downloaded locally:
-
-```bash
-curl -fsO "https://github.com/Source-Authors/Obsoletium/releases/tag/${VERSION}/SHASUMS256.txt.asc" \
-&& gpgv --keyring="${GNUPGHOME:-~/.gnupg}/pubring.kbx" --output SHASUMS256.txt < SHASUMS256.txt.asc \
-&& shasum --check SHASUMS256.txt --ignore-missing
+```
+create_game_projects.bat hl2 x64
+build_htmlui_thirdparty.bat x64    :: downloads CEF and builds the gameui CEF bridge
+msbuild hl2_x64.slnx /p:Configuration=Release /p:Platform=x64
 ```
 
-## Building Obsoletium
-
-See [BUILDING.md](./BUILDING.md) for instructions on how to build Obsoletium from
-source and a list of supported platforms.
-
-## Security
-
-For information on reporting security vulnerabilities in Obsoletium, see
-[SECURITY.md](./SECURITY.md).
-
-## Contributing to Obsoletium
-
-* [Contributing to the project][]
-
-## Current project team members
-
-For information about the governance of the Obsoletium project, see
-[GOVERNANCE.md](./GOVERNANCE.md).
-
-### Collaborators
-
-* [dimhotepus](https://github.com/dimhotepus) -
-  **Dmitry Tsarevich** <<dimhotepus@gmail.com>> (he/him)
-* [RaphaelIT7](https://github.com/RaphaelIT7) -
-  **Raphael** <<raphael.i.t@outlook.de>> (he/him)
-
-Collaborators follow the [Collaborator Guide](./docs/contributing/COLLABORATOR_GUIDE.md) in
-maintaining the Obsoletium project.
-
-### Triagers
-
-* [dimhotepus](https://github.com/dimhotepus) -
-  **Dmitry Tsarevich** <<dimhotepus@gmail.com>> (he/him)
-
-Triagers follow the [Triage Guide](./docs/contributing/ISSUES.md#triaging-a-bug-report) when
-responding to new issues.
-
-### Release keys
-
-Primary GPG keys for Obsoletium Releasers:
-
-* **Dmitry Tsarevich** <<dimhotepus@gmail.com>>
-  `D80E14A4A52C46278F7B7B5C3B77A450568588BA`
-
-You can import them from a public key server. Have in mind that
-the project cannot guarantee the availability of the server nor the keys on
-that server.
-
-```bash
-gpg --keyserver hkps://keys.openpgp.org --recv-keys D80E14A4A52C46278F7B7B5C3B77A450568588BA # Dmitry Tsarevich
-```
-
-See [Verifying binaries](#verifying-binaries) for how to use these keys to
-verify a downloaded file.
+The HTML UI is documented in [`gameui/README.md`](gameui/README.md), the launcher in
+[`ssm-launcher/README.md`](ssm-launcher/README.md).
 
 ## License
 
-Obsoletium is available under the
-[SOURCE 1 SDK LICENSE](https://github.com/ValveSoftware/source-sdk-2013/blob/master/LICENSE).  Obsoletium also includes
-external libraries that are available under a variety of licenses.  See
-[LICENSE](https://github.com/Source-Authors/Obsoletium/blob/master/LICENSE) for the full
-license text.
-
-## Tools
-
-* [PVS-Studio](https://pvs-studio.com/en/pvs-studio/?utm_source=website&utm_medium=github&utm_campaign=open_source) - static analyzer for C, C++, C#, and Java code.
-
-[Code of Conduct]: https://github.com/Source-Authors/Obsoletium/blob/HEAD/docs/contributing/CODE_OF_CONDUCT.md
-[Contributing to the project]: ./CONTRIBUTING.md
+Engine code: see [LICENSE](LICENSE) (Source SDK license, as in Obsoletium). Half-Life,
+Valve and Steam are trademarks of Valve Corporation. This project is not affiliated with Valve.

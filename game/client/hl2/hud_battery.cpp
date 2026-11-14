@@ -19,6 +19,7 @@
 
 #include "vgui_controls/AnimationController.h"
 #include "vgui/ILocalize.h"
+#include "htmlhud.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -147,4 +148,5 @@ void CHudBattery::OnThink( void )
 void CHudBattery::MsgFunc_Battery( bf_read &msg )
 {
 	m_iNewBat = msg.ReadShort();
+	g_HtmlHudHooks.iArmor = m_iNewBat;
 }

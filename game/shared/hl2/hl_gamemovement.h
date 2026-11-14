@@ -44,6 +44,16 @@ public:
 	virtual void	SetGroundEntity( trace_t *pm );
 	virtual bool CanAccelerate( void );
 
+	// SourceSpeedrunMod Half-Life 1 movement (sv_movement_mode 2), ported
+	// from the sdk-2013-ce HL1 movement mod. Other modes use the base code.
+	virtual bool CheckJumpButton( void );
+	virtual void Duck( void );
+	virtual void FinishUnDuck( void );
+	virtual void FinishDuck( void );
+	virtual bool CanUnduck();
+	virtual void HandleDuckingSpeedCrop();
+	virtual void CheckParameters( void );
+
 private:
 
 	// See if we are pressing use near a ladder "mount" point and if so, latch us onto the ladder

@@ -100,6 +100,11 @@ ConVar sv_unlockedchapters( "sv_unlockedchapters", "1", FCVAR_ARCHIVE, "Highest 
 static ConVar tv_nochat	( "tv_nochat", "0", FCVAR_ARCHIVE | FCVAR_USERINFO, "Don't receive chat messages from other SourceTV spectators" );
 static ConVar cl_LocalNetworkBackdoor( "cl_localnetworkbackdoor", "1", 0, "Enable network optimizations for single player games." );
 static ConVar cl_ignorepackets( "cl_ignorepackets", "0", FCVAR_CHEAT, "Force client to ignore packets (for debugging)." );
+// SourceSpeedrunMod: Valve holds rendering for 0.25 s after every singleplayer
+// load so client values can settle; the loading screen stays up meanwhile.
+// A few ticks are enough on current hardware.
+static ConVar cl_load_settle_time( "cl_load_settle_time", "0.03", FCVAR_ARCHIVE,
+	"Seconds the first frame is held back after a singleplayer map load (Valve default 0.25).", true, 0.0f, true, 1.0f );
 static ConVar cl_playback_screenshots( "cl_playback_screenshots", "0", 0, "Allows the client to playback screenshot and jpeg commands in demos." );
 
 #if defined( STAGING_ONLY ) || !defined(NDEBUG)
@@ -1045,7 +1050,7 @@ void CL_FullyConnected( void )
 	// This is a Hack, but we need to suppress rendering for a bit in single player to let values settle on the client
 	if ( (cl.m_nMaxClients == 1) && !demoplayer->IsPlayingBack() )
 	{
-		scr_nextdrawtick = host_tickcount + TIME_TO_TICKS( 0.25f );
+		scr_nextdrawtick = host_tickcount + TIME_TO_TICKS( cl_load_settle_time.GetFloat() );
 	}
 
 	// Now that we're connected, toggle the clan tag so it gets sent to the server

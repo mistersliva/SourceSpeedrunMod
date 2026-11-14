@@ -461,3 +461,12 @@ materialsystem/stdshaders/NIL
 
 # MSVC edit-when-debug temp files
 enc_temp_folder/
+# HTML GameUI: downloaded CEF distribution and bridge build output
+thirdparty/cef/
+thirdparty/cef_download/
+gameui/cefbridge/out/
+
+# SourceSpeedrunMod launcher
+ssm-launcher/node_modules/
+ssm-launcher/dist/
+

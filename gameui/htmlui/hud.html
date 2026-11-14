@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HUD</title>
+  <link rel="stylesheet" href="css/hud.css">
+</head>
+<body class="is-hidden">
+  <!-- Damage direction arcs + fullscreen pain overlay -->
+  <div id="damage" aria-hidden="true"></div>
+  <div id="pain" aria-hidden="true"></div>
+
+  <!-- Weapon selection -->
+  <div id="selection" hidden></div>
+
+  <!-- Pickup history -->
+  <ul id="history"></ul>
+
+  <div id="hud">
+    <!-- Bottom left: health / armor / aux power -->
+    <section class="vitals">
+      <div class="aux" id="aux" hidden>
+        <div class="aux__head"><span>Aux power</span>
+          <span class="aux__devices">
+            <span id="aux-sprint">Sprint</span>
+            <span id="aux-flashlight">Flashlight</span>
+            <span id="aux-breather">Oxygen</span>
+          </span>
+        </div>
+        <div class="aux__bar"><div class="aux__fill" id="aux-fill"></div></div>
+      </div>
+      <div class="stats">
+        <div class="stat" id="health-card">
+          <svg class="stat__icon" viewBox="0 0 16 16"><path d="M6 1.5h4v4.5h4.5v4H10v4.5H6V10H1.5V6H6z"/></svg>
+          <span class="stat__value" id="health">100</span>
+          <span class="stat__bar"><span class="stat__fill" id="health-fill"></span></span>
+        </div>
+        <div class="stat" id="suit-card" hidden>
+          <svg class="stat__icon" viewBox="0 0 16 16"><path d="M8 1 14 3.2v4.3c0 3.6-2.5 6.3-6 7.5-3.5-1.2-6-3.9-6-7.5V3.2z"/></svg>
+          <span class="stat__value" id="armor">0</span>
+          <span class="stat__bar"><span class="stat__fill" id="armor-fill"></span></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Bottom center: timer + speed -->
+    <section class="runbox glass" id="runbox">
+      <div class="runbox__timer" id="timer">00:00.000</div>
+      <div class="runbox__speed" id="speedo">
+        <span class="runbox__label">Speed:</span>
+        <span class="runbox__value" id="speed">0</span>
+        <span class="runbox__unit">u/s</span>
+      </div>
+      <div class="runbox__tags">
+        <span class="tag" id="movement-chip">HL2</span>
+        <span class="tag" id="autobhop-chip" hidden>Auto</span>
+      </div>
+    </section>
+
+    <!-- Bottom center: squad -->
+    <section class="squad" id="squad" hidden>
+      <div class="squad__members" id="squad-members"></div>
+      <div class="squad__state" id="squad-state"></div>
+    </section>
+
+    <!-- Bottom right: weapon + ammo -->
+    <section class="ammo" id="ammo" hidden>
+      <div class="ammo__weapon">
+        <span class="ammo__name" id="weapon-name"></span>
+        <span class="ammo__icon icons" id="weapon-icon"></span>
+      </div>
+      <div class="ammo__counts">
+        <span class="ammo__secondary" id="secondary-wrap" hidden><span class="ammo__secondary-label">Alt</span> <span id="secondary"></span></span>
+        <span class="ammo__clip" id="clip"></span>
+        <span class="ammo__reserve" id="reserve"></span>
+      </div>
+      <div class="ammo__clipbar" id="clipbar"></div>
+    </section>
+  </div>
+
+  <div class="mode-toast glass" id="mode-toast" hidden></div>
+
+  <!-- Speedrun timer / splits (js/splits.js) -->
+  <section class="splits" id="splits" hidden>
+    <header class="splits__head">
+      <div class="splits__game" id="splits-game"></div>
+      <div class="splits__sub"><span id="splits-category"></span><span class="splits__attempts" id="splits-attempts"></span></div>
+    </header>
+    <div class="splits__rows" id="splits-rows"></div>
+    <div class="splits__timer" id="splits-timer">0:00.00</div>
+    <div class="splits__info"><span>Previous segment</span><span id="splits-prev">-</span></div>
+    <div class="splits__info"><span>Sum of best</span><span id="splits-sob">-</span></div>
+  </section>
+
+  <script src="js/source.js"></script>
+  <script src="js/prefs.js"></script>
+  <script src="js/splits.js"></script>
+  <script src="js/hud.js"></script>
+</body>
+</html>

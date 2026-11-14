@@ -1,0 +1,30 @@
+{
+  "name": "ssm-launcher",
+  "productName": "SourceSpeedrunMod Launcher",
+  "version": "1.0.0",
+  "description": "Launcher for SourceSpeedrunMod",
+  "author": "SourceSpeedrunMod",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable",
+    "manifest": "node tools/make-manifest.js"
+  },
+  "build": {
+    "appId": "com.sourcespeedrunmod.launcher",
+    "productName": "SourceSpeedrunMod Launcher",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["main.js", "preload.js", "src/**/*", "renderer/**/*", "build/icon.png", "package.json"],
+    "win": {
+      "target": [{ "target": "portable", "arch": ["x64"] }],
+      "icon": "build/icon.png",
+      "artifactName": "SSM-Launcher.exe"
+    },
+    "portable": { "requestExecutionLevel": "user" }
+  },
+  "devDependencies": {
+    "electron": "^45.3.2",
+    "electron-builder": "^26.18.0"
+  }
+}

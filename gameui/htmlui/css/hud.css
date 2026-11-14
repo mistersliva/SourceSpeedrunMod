@@ -1,0 +1,278 @@
+/*
+ * hud.css — HTML HUD. Composited over the game (transparent page); nothing
+ * here is interactive. Flat and quiet: plain numbers with a soft shadow,
+ * thin bars, one translucent panel for the timer / speed. Scale, opacity,
+ * accent and visible parts are user preferences (js/prefs.js).
+ */
+
+@font-face {
+  font-family: "HL2";
+  src: url("/game/resource/HALFLIFE2.ttf") format("truetype");
+  font-display: block;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+:root {
+  --hud: #f0f0f0;
+  --hud-muted: rgba(240, 240, 240, 0.72);
+  --accent: #7cc8f5;
+  --panel: rgba(34, 36, 40, 0.72);
+  --danger: #f26d6d;
+  --scale: 1;
+  --font: "Bahnschrift", "DIN Alternate", "Segoe UI", system-ui, sans-serif;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.75), 0 0 6px rgba(0, 0, 0, 0.35);
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  font-size: calc(clamp(11px, calc(1.05vh + 0.35vw), 22px) * var(--scale));
+}
+
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  color: var(--hud);
+  font-family: var(--font);
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+[hidden] { display: none !important; }
+
+body { transition: opacity 0.4s; }
+body.is-hidden, body.hide-all { opacity: 0; }
+#hud { opacity: var(--hud-opacity, 1); }
+body.is-dead .vitals, body.is-dead .ammo, body.is-dead .squad, body.is-dead #history, body.is-dead .runbox { opacity: 0; transition: opacity 1.2s; }
+
+.icons { font-family: "HL2", var(--font); }
+.vitals, .ammo, .runbox__speed, #history { text-shadow: var(--shadow); }
+
+/* ------------------------------------------------------------- Vitals */
+.vitals {
+  position: fixed;
+  left: 2.4vw;
+  bottom: 3.2vh;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  transition: opacity 0.3s;
+}
+body.hide-health .vitals, body.no-vitals .vitals { opacity: 0; }
+
+.stats { display: flex; gap: 2.2rem; }
+.stat { display: flex; align-items: center; gap: 0.55rem; }
+.stat__icon { width: 1.25rem; height: 1.25rem; fill: var(--hud); filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.7)); }
+.stat__value { min-width: 2.2ch; font-size: 1.75rem; font-weight: 400; font-variant-numeric: tabular-nums; line-height: 1; }
+.stat__bar { position: relative; width: 5.6rem; height: 0.28rem; background: rgba(255, 255, 255, 0.22); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4); }
+.stat__fill { position: absolute; inset: 0; background: var(--hud); transform-origin: left; transition: transform 0.3s var(--ease), background 0.2s; }
+
+.stat.is-low { color: var(--danger); }
+.stat.is-low .stat__icon { fill: var(--danger); }
+.stat.is-low .stat__fill { background: var(--danger); }
+.stat.is-low .stat__value { animation: low-pulse 1s ease-in-out infinite; }
+@keyframes low-pulse { 50% { opacity: 0.5; } }
+.stat.is-hit .stat__value { animation: hit 0.35s var(--ease); }
+@keyframes hit { 30% { color: var(--danger); transform: translateX(0.2rem); } }
+.stat.is-gain .stat__value { animation: gain 0.5s var(--ease); }
+@keyframes gain { 30% { color: var(--accent); } }
+
+/* Aux power */
+.aux { width: 18rem; animation: fade-up 0.25s var(--ease); }
+.aux__head { display: flex; justify-content: space-between; gap: 1rem; font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--hud-muted); }
+.aux__devices span { display: none; color: var(--accent); }
+.aux__devices span.is-on { display: inline; margin-left: 0.6rem; }
+.aux__bar { position: relative; height: 0.22rem; margin-top: 0.3rem; background: rgba(255, 255, 255, 0.22); }
+.aux__fill { position: absolute; inset: 0; background: var(--accent); transform-origin: left; transition: transform 0.15s linear; }
+.aux.is-low .aux__fill { background: var(--danger); }
+@keyframes fade-up { from { opacity: 0; transform: translateY(0.4rem); } }
+
+/* ------------------------------------------------------------- Timer / speed */
+.runbox {
+  position: fixed;
+  left: 50%;
+  bottom: 3.2vh;
+  transform: translateX(-50%);
+  min-width: 15rem;
+  padding: 0.55rem 1.6rem 0.6rem;
+  background: var(--panel);
+  text-align: center;
+  transition: opacity 0.3s;
+}
+.runbox__timer { font-size: 1.9rem; font-weight: 400; line-height: 1.1; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+.runbox__speed { margin-top: 0.1rem; font-size: 1.15rem; color: var(--hud-muted); font-variant-numeric: tabular-nums; }
+.runbox__value { display: inline-block; min-width: 3ch; color: var(--accent); }
+.runbox__tags { display: flex; justify-content: center; gap: 0.35rem; margin-top: 0.35rem; }
+.runbox__tags:empty { display: none; }
+.tag { padding: 0.08rem 0.45rem; background: rgba(255, 255, 255, 0.1); color: var(--hud-muted); font-size: 0.66rem; letter-spacing: 0.12em; text-transform: uppercase; }
+
+body.no-timer .runbox__timer, body.no-speed .runbox__speed, body.no-mode .runbox__tags { display: none; }
+body.no-timer.no-speed.no-mode .runbox, body.hide-health .runbox, body.is-dead .runbox { opacity: 0; }
+body.no-panels .runbox { background: none; text-shadow: var(--shadow); }
+body.no-panels .tag { background: rgba(0, 0, 0, 0.35); }
+
+/* Speed under the crosshair */
+body.speed-center .runbox { bottom: auto; top: 58%; min-width: 0; padding: 0.2rem 0.8rem; background: none; text-shadow: var(--shadow); }
+body.speed-center .runbox__timer { font-size: 1.2rem; }
+body.speed-center .tag { background: rgba(0, 0, 0, 0.35); }
+
+/* ------------------------------------------------------------- Ammo */
+.ammo {
+  position: fixed;
+  right: 2.4vw;
+  bottom: 3.2vh;
+  text-align: right;
+  transition: opacity 0.3s;
+}
+body.hide-weapons .ammo, body.no-ammo .ammo { opacity: 0; }
+.ammo__weapon { display: flex; align-items: center; justify-content: flex-end; gap: 0.7rem; }
+.ammo__name { font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--hud-muted); }
+.ammo__icon { font-size: 2.6rem; line-height: 1; }
+.ammo__counts { display: flex; align-items: baseline; justify-content: flex-end; gap: 0.45rem; margin-top: 0.1rem; font-variant-numeric: tabular-nums; }
+.ammo__clip { font-size: 1.75rem; line-height: 1; }
+.ammo__reserve { font-size: 1.15rem; color: var(--hud-muted); }
+.ammo__reserve::before { content: "/ "; }
+.ammo__secondary { margin-right: 0.8rem; font-size: 1.1rem; color: var(--hud-muted); }
+.ammo__secondary-label { font-size: 0.66rem; letter-spacing: 0.12em; text-transform: uppercase; }
+.ammo.is-empty .ammo__clip { color: var(--danger); }
+.ammo.is-low .ammo__clip { animation: low-pulse 0.8s ease-in-out infinite; }
+
+.ammo__clipbar { display: flex; justify-content: flex-end; gap: 2px; margin-top: 0.4rem; height: 0.22rem; }
+.ammo__clipbar i { flex: 1 1 0; max-width: 0.5rem; background: var(--hud); box-shadow: 0 1px 1px rgba(0, 0, 0, 0.5); transition: opacity 0.15s; }
+.ammo__clipbar i.is-spent { opacity: 0.2; }
+
+/* ------------------------------------------------------------- Squad */
+.squad {
+  position: fixed;
+  left: 50%;
+  bottom: calc(3.2vh + 7rem);
+  transform: translateX(-50%);
+  text-align: center;
+  text-shadow: var(--shadow);
+  animation: fade-up 0.25s var(--ease);
+}
+.squad__members { display: flex; gap: 0.35rem; justify-content: center; font-size: 1.6rem; }
+.squad__members .medic { color: #86dc9a; }
+.squad__state { font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--hud-muted); }
+
+/* ------------------------------------------------------------- Selection */
+#selection {
+  position: fixed;
+  top: 3.5vh;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 0.3rem;
+  opacity: var(--hud-opacity, 1);
+  animation: fade-down 0.15s var(--ease);
+}
+@keyframes fade-down { from { opacity: 0; transform: translate(-50%, -0.5rem); } }
+.slot { display: flex; flex-direction: column; gap: 0.3rem; width: 8.5rem; }
+.slot__num { height: 1.4rem; background: var(--panel); font-size: 0.8rem; line-height: 1.4rem; text-align: center; color: var(--hud-muted); }
+.slot.is-empty { width: 2.2rem; }
+.wpn { position: relative; height: 4.2rem; padding: 0.3rem 0.5rem; background: var(--panel); overflow: hidden; transition: background 0.12s; }
+.wpn__icon { display: block; font-size: 2.6rem; line-height: 1; text-align: center; white-space: nowrap; }
+.wpn__label { position: absolute; left: 0.5rem; right: 0.5rem; bottom: 0.25rem; font-size: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--hud-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+.wpn.is-selected { background: rgba(255, 255, 255, 0.2); box-shadow: inset 0 -2px 0 var(--accent); }
+.wpn.is-selected .wpn__label { color: var(--hud); }
+.wpn.is-empty { color: var(--danger); opacity: 0.6; }
+
+/* ------------------------------------------------------------- History */
+#history {
+  position: fixed;
+  right: 2.4vw;
+  bottom: calc(3.2vh + 7.5rem);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: flex-end;
+  gap: 0.25rem;
+  opacity: var(--hud-opacity, 1);
+}
+#history li { display: flex; align-items: center; gap: 0.6rem; padding: 0.15rem 0; animation: slide-in 0.25s var(--ease); transition: opacity 0.6s, transform 0.6s; }
+#history li.is-leaving { opacity: 0; transform: translateX(1rem); }
+#history li.is-denied { color: var(--danger); }
+#history .h-icon { font-family: "HL2", var(--font); font-size: 1.9rem; line-height: 1; }
+#history .h-label { font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--hud-muted); }
+#history .h-count { font-size: 1rem; color: var(--accent); }
+@keyframes slide-in { from { opacity: 0; transform: translateX(1.5rem); } }
+
+/* ------------------------------------------------------------- Damage */
+#damage { position: fixed; inset: 0; pointer-events: none; }
+/* Arcs: a plain bordered ring rotated toward the attacker. No filter or mask:
+   those make Chromium re-rasterize the element on every animation frame. */
+.dmg-arc {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 34vh;
+  height: 34vh;
+  margin: -17vh 0 0 -17vh;
+  border-radius: 50%;
+  border: 0.7vh solid transparent;
+  border-top-color: rgba(255, 50, 40, 0.9);
+  will-change: opacity;
+  animation: dmg-fade 1.3s ease-out forwards;
+}
+.dmg-arc.is-heavy { border-width: 1.2vh; border-top-color: rgb(255, 30, 20); }
+@keyframes dmg-fade { 0% { opacity: 0; } 8% { opacity: 1; } 100% { opacity: 0; } }
+
+/* The damage flash itself is drawn by the engine (hud.flash); only the static
+   death tint stays here. */
+#pain { position: fixed; inset: 0; pointer-events: none; opacity: 0; background: rgba(120, 0, 0, 0.35); }
+body.is-dead #pain { opacity: 1; background: rgba(120, 0, 0, 0.35); transition: opacity 1.5s; }
+
+/* ------------------------------------------------------------- Movement toast */
+.mode-toast {
+  position: fixed;
+  left: 50%;
+  top: 22%;
+  transform: translateX(-50%);
+  padding: 0.6rem 1.4rem;
+  background: var(--panel);
+  text-align: center;
+  animation: toast-pop 2.2s var(--ease) forwards;
+}
+.mode-toast b { display: block; color: var(--hud-muted); font-size: 0.66rem; font-weight: 400; letter-spacing: 0.14em; text-transform: uppercase; }
+.mode-toast span { display: block; margin-top: 0.15rem; font-size: 1.1rem; }
+@keyframes toast-pop {
+  0% { opacity: 0; transform: translate(-50%, -0.6rem); }
+  10%, 80% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, 0); }
+}
+
+/* ------------------------------------------------------------- Speedrun splits */
+.splits {
+  position: fixed;
+  top: 3.5vh;
+  right: 2.4vw;
+  width: 18rem;
+  background: var(--panel);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.5);
+  opacity: var(--hud-opacity, 1);
+}
+body.splits-left .splits { right: auto; left: 2.4vw; }
+body.no-panels .splits { background: rgba(0, 0, 0, 0.25); }
+body.is-dead .splits { opacity: 1; }
+.splits__head { padding: 0.5rem 0.8rem 0.45rem; text-align: center; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+.splits__game { font-size: 0.92rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.splits__sub { position: relative; font-size: 0.74rem; color: var(--hud-muted); min-height: 1em; }
+.splits__attempts { position: absolute; right: 0; }
+.split { display: grid; grid-template-columns: 1fr 4rem 4.4rem; gap: 0.3rem; padding: 0.22rem 0.8rem; font-size: 0.86rem; }
+.split.is-current { background: rgba(255, 255, 255, 0.11); box-shadow: inset 2px 0 0 var(--accent); }
+.split.is-last { border-top: 1px solid rgba(255, 255, 255, 0.12); }
+.split__name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.split__delta, .split__time { text-align: right; }
+.splits__timer { padding: 0.25rem 0.8rem 0.05rem; font-size: 2.3rem; line-height: 1.1; text-align: right; color: var(--hud); }
+.splits__info { display: flex; justify-content: space-between; padding: 0.12rem 0.8rem; font-size: 0.78rem; color: var(--hud-muted); }
+.splits__info:last-child { padding-bottom: 0.5rem; }
+/* LiveSplit delta colours */
+.is-ahead-gain { color: #29d669; }
+.is-ahead-lose { color: #85d6a0; }
+.is-behind-gain { color: #e88a80; }
+.is-behind-lose { color: #ff4f3f; }
+.is-gold { color: #ffd24a; }
+.is-pb { color: #4fb8ff; }
