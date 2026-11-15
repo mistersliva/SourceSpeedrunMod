@@ -3992,6 +3992,13 @@ bool Host_NewGame( char *mapName, bool loadGame, bool bBackgroundLevel, const ch
 	COM_TimestampedLog( "Host_NewGame" );
 
 #ifndef SWDS
+	// SourceSpeedrunMod: a save still being written on the save thread must
+	// finish before the new game resets the save directory and queue. "save x;
+	// reload" (save deletion) and "save x; map y" raced here and could crash.
+	saverestore->FinishAsyncSave();
+#endif
+
+#ifndef SWDS
 	SCR_BeginLoadingPlaque();
 #endif
 

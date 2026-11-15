@@ -34,6 +34,9 @@
 #endif
 
 // memdbgon must be the last include file in a .cpp file!!!
+// SourceSpeedrunMod: loose-file folder cache (filesystem_stdio.cpp).
+void LooseFile_Invalidate( const char *pFullPath );
+
 #include "tier0/memdbgon.h"
 
 
@@ -3671,6 +3674,7 @@ void CBaseFileSystem::CreateDirHierarchy( const char *pRelativePathT, const char
 			*s = '\0';
 
 #if defined( _WIN32 )
+			LooseFile_Invalidate( szScratchFileName );
 			if ( _mkdir( szScratchFileName ) && errno != EEXIST )
 #elif defined( POSIX )
 			if ( mkdir( szScratchFileName, S_IRWXU |  S_IRGRP |  S_IROTH ) && errno != EEXIST )// owner has rwx, rest have r
@@ -3688,6 +3692,7 @@ void CBaseFileSystem::CreateDirHierarchy( const char *pRelativePathT, const char
 		s++;
 	}
 
+	LooseFile_Invalidate( szScratchFileName );
 #if defined( _WIN32 )
 	if ( _mkdir( szScratchFileName ) && errno != EEXIST )
 #elif defined( POSIX )
@@ -4379,6 +4384,7 @@ void CBaseFileSystem::RemoveFile( char const* pRelativePath, const char *pathID 
 		ComputeFullWritePath( szScratchFileName, sizeof( szScratchFileName ), pRelativePath, pathID );
 	}
 
+	LooseFile_Invalidate( szScratchFileName );
 	if ( unlink( szScratchFileName ) )
 	{
 		Warning( FILESYSTEM_WARNING, "Unable to remove file '%s': %s.\n",
@@ -4438,6 +4444,8 @@ bool CBaseFileSystem::RenameFile( char const *pOldPath, char const *pNewPath, co
 	V_StripFilename( pPathOnly );
 	CreateDirHierarchy( pPathOnly, pathID );
 
+	LooseFile_Invalidate( szScratchFileName );
+	LooseFile_Invalidate( pNewFileName );
 	// Now copy the file over.
 	if ( rename( szScratchFileName, pNewFileName ) )
 	{

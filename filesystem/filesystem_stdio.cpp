@@ -34,6 +34,198 @@
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
+//-----------------------------------------------------------------------------
+// SourceSpeedrunMod: I/O accounting for load-time experiments (fs_iostats).
+//-----------------------------------------------------------------------------
+#include <atomic>
+namespace
+{
+	struct IoStat_t
+	{
+		std::atomic<int64> us{0};
+		std::atomic<int64> count{0};
+		std::atomic<int64> fails{0};
+		std::atomic<int64> bytes{0};
+	};
+	IoStat_t s_IoOpen, s_IoRead, s_IoStat, s_IoFind, s_IoSkip;
+
+	struct IoTimer_t
+	{
+		IoStat_t &stat;
+		const double start;
+		explicit IoTimer_t( IoStat_t &s ) : stat( s ), start( Plat_FloatTime() ) {}
+		~IoTimer_t() { stat.us += static_cast<int64>( ( Plat_FloatTime() - start ) * 1e6 ); ++stat.count; }
+	};
+}
+
+static ConVar fs_iostats_spew( "fs_iostats_spew", "0", 0, "Print every low-level file open (SourceSpeedrunMod diagnostics)." );
+
+CON_COMMAND( fs_iostats, "Print and reset file I/O time spent since the last call (SourceSpeedrunMod)." )
+{
+	auto line = []( const char *name, IoStat_t &st ) {
+		Msg( "  %-6s %7lld calls  %7lld failed  %8.1f ms  %8.1f MB\n", name,
+			(long long)st.count.load(), (long long)st.fails.load(), st.us.load() / 1000.0, st.bytes.load() / ( 1024.0 * 1024.0 ) );
+		st.us = 0; st.count = 0; st.fails = 0; st.bytes = 0;
+	};
+	Msg( "fs_iostats:\n" );
+	line( "open", s_IoOpen );
+	line( "read", s_IoRead );
+	line( "stat", s_IoStat );
+	line( "find", s_IoFind );
+	line( "skip", s_IoSkip );
+}
+
+//-----------------------------------------------------------------------------
+// SourceSpeedrunMod: loose-file directory cache.
+//
+// Every asset lookup tries the loose search paths (mod folder, custom, the HL2
+// install) before finding the file inside a VPK. Each failed CreateFile costs
+// 0.1-0.5 ms on Windows (antivirus filters see every open), which on a modern
+// NVMe drive is far more than reading the data: ~1400 failed opens per new map,
+// 6000+ at startup. Asset folders are listed once instead, and a lookup for a
+// file that is not in the listing fails without touching the disk.
+//
+// Only asset folders are cached (the engine never writes there); writes,
+// renames, removals and new folders made through the filesystem drop the
+// affected entries anyway.
+//-----------------------------------------------------------------------------
+#ifdef _WIN32
+#include <mutex>
+#include <shared_mutex>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+
+static ConVar fs_loose_dir_cache( "fs_loose_dir_cache", "1", FCVAR_ARCHIVE,
+	"Remember asset folder listings so lookups of files that only exist in VPKs skip the disk." );
+
+namespace
+{
+	struct LooseDir_t
+	{
+		bool exists = false;
+		std::unordered_set< std::string > names;	// lowercase file and folder names
+	};
+
+	std::shared_mutex s_LooseDirMutex;
+	std::unordered_map< std::string, LooseDir_t > s_LooseDirs;	// key: lowercase folder path
+
+	void LowerSlashes( const char *pIn, std::string &out )
+	{
+		out.clear();
+		for ( const char *p = pIn; *p; ++p )
+		{
+			char c = *p;
+			if ( c == '/' )
+				c = '\\';
+			else if ( c >= 'A' && c <= 'Z' )
+				c = static_cast<char>( c - 'A' + 'a' );
+			out.push_back( c );
+		}
+	}
+
+	// Folders whose contents only change when content is installed.
+	bool IsAssetPath( const std::string &path )
+	{
+		static const char *const kSkip[] = { "\\save\\", "\\cache\\", "\\cfg\\", "\\screenshots\\", "\\downloadlists\\",
+			"\\demos\\", "\\splits\\", "\\graphs\\", "\\logs\\" };
+		for ( const char *skip : kSkip )
+		{
+			if ( path.find( skip ) != std::string::npos )
+				return false;
+		}
+		static const char *const kAssets[] = { "\\maps\\", "\\materials\\", "\\models\\", "\\sound\\", "\\particles\\", "\\scenes\\",
+			"\\resource\\", "\\scripts\\", "\\media\\", "\\expressions\\" };
+		for ( const char *asset : kAssets )
+		{
+			if ( path.find( asset ) != std::string::npos )
+				return true;
+		}
+		return false;
+	}
+
+	void ListDir( const std::string &dir, LooseDir_t &out )
+	{
+		WIN32_FIND_DATAA data;
+		HANDLE h = ::FindFirstFileExA( ( dir + "\\*" ).c_str(), FindExInfoBasic, &data, FindExSearchNameMatch, nullptr, FIND_FIRST_EX_LARGE_FETCH );
+		if ( h == INVALID_HANDLE_VALUE )
+		{
+			out.exists = false;
+			return;
+		}
+		out.exists = true;
+		std::string name;
+		do
+		{
+			LowerSlashes( data.cFileName, name );
+			if ( name != "." && name != ".." )
+				out.names.insert( name );
+		} while ( ::FindNextFileA( h, &data ) );
+		::FindClose( h );
+	}
+}
+
+// False only when the file is known not to exist.
+static bool LooseFile_MayExist( const char *pFullPath )
+{
+	if ( !fs_loose_dir_cache.GetBool() )
+		return true;
+
+	std::string path;
+	LowerSlashes( pFullPath, path );
+	if ( !IsAssetPath( path ) )
+		return true;
+
+	const size_t slash = path.find_last_of( '\\' );
+	if ( slash == std::string::npos || slash == 0 )
+		return true;
+	const std::string dir = path.substr( 0, slash );
+	const std::string name = path.substr( slash + 1 );
+
+	{
+		std::shared_lock lock( s_LooseDirMutex );
+		auto it = s_LooseDirs.find( dir );
+		if ( it != s_LooseDirs.end() )
+			return it->second.exists && it->second.names.count( name ) != 0;
+	}
+
+	LooseDir_t listing;
+	ListDir( dir, listing );
+	const bool bExists = listing.exists && listing.names.count( name ) != 0;
+	std::unique_lock lock( s_LooseDirMutex );
+	s_LooseDirs.emplace( dir, std::move( listing ) );
+	return bExists;
+}
+
+static void MemFile_Invalidate( const std::string &lowerPath );
+
+// Something changed at this path: forget its folder and every parent listing.
+void LooseFile_Invalidate( const char *pFullPath )
+{
+	if ( !pFullPath || !pFullPath[0] )
+		return;
+	std::string path;
+	LowerSlashes( pFullPath, path );
+	MemFile_Invalidate( path );
+	std::unique_lock lock( s_LooseDirMutex );
+	if ( s_LooseDirs.empty() )
+		return;
+	s_LooseDirs.erase( path );	// in case it is a folder
+	for ( size_t slash = path.find_last_of( '\\' ); slash != std::string::npos && slash > 0; slash = path.find_last_of( '\\', slash - 1 ) )
+		s_LooseDirs.erase( path.substr( 0, slash ) );
+}
+
+CON_COMMAND( fs_loose_dir_cache_flush, "Forget the cached asset folder listings." )
+{
+	std::unique_lock lock( s_LooseDirMutex );
+	Msg( "Dropped %zu cached folder listings.\n", s_LooseDirs.size() );
+	s_LooseDirs.clear();
+}
+#else
+static bool LooseFile_MayExist( const char * ) { return true; }
+void LooseFile_Invalidate( const char * ) {}
+#endif
+
 static_assert( SEEK_CUR == FILESYSTEM_SEEK_CURRENT );
 static_assert( SEEK_SET == FILESYSTEM_SEEK_HEAD );
 static_assert( SEEK_END == FILESYSTEM_SEEK_TAIL );
@@ -393,27 +585,290 @@ void CFileSystem_Stdio::FreeOptimalReadBuffer( void *p )
 }
 
 //-----------------------------------------------------------------------------
+// SourceSpeedrunMod: in-memory cache of loose files.
+//
+// Loading a level reopens the same loose files every time (the map's .bsp
+// several times, scripts, resource files). Each open is a CreateFile through
+// the antivirus filter and whatever file system driver the game folder sits
+// on, which costs far more than the read itself on an SSD. A file opened for
+// reading is kept in memory and later opens are served from there.
+//-----------------------------------------------------------------------------
+#ifdef _WIN32
+#include <list>
+#include <memory>
+#include <vector>
+
+static ConVar fs_file_mem_cache( "fs_file_mem_cache", "1", FCVAR_ARCHIVE,
+	"Keep loose game files in memory after the first open (maps, scripts) so reloads skip the disk." );
+static ConVar fs_file_mem_cache_mb( "fs_file_mem_cache_mb", "768", FCVAR_ARCHIVE,
+	"Memory limit of fs_file_mem_cache, in MB.", true, 64, true, 8192 );
+
+namespace
+{
+	using FileBytes = std::shared_ptr< const std::vector< char > >;
+
+	class CMemFsFile final : public CStdFilesystemFile
+	{
+	public:
+		explicit CMemFsFile( FileBytes data ) : m_Data( std::move( data ) ) {}
+
+		void FS_setbufsize( unsigned ) override {}
+		void FS_fclose() override { m_Data.reset(); }
+		int FS_fseek( int64 pos, int seekType ) override
+		{
+			int64 base = 0;
+			if ( seekType == SEEK_CUR )
+				base = m_nPos;
+			else if ( seekType == SEEK_END )
+				base = Size();
+			const int64 target = base + pos;
+			if ( target < 0 )
+				return -1;
+			m_nPos = target;
+			m_bEof = false;
+			return static_cast<int>( m_nPos );
+		}
+		long FS_ftell() override { return static_cast<long>( m_nPos ); }
+		int FS_feof() override { return m_bEof ? 1 : 0; }
+		size_t FS_fread( OUT_BYTECAP(destSize) void *dest, size_t destSize, size_t size ) override
+		{
+			const int64 avail = Size() - m_nPos;
+			size_t n = size;
+			if ( avail <= 0 )
+				n = 0;
+			else if ( static_cast<int64>( n ) > avail )
+				n = static_cast<size_t>( avail );
+			if ( n > destSize )
+				n = destSize;
+			if ( n )
+				memcpy( dest, m_Data->data() + m_nPos, n );
+			m_nPos += static_cast<int64>( n );
+			if ( n < size )
+				m_bEof = true;
+			return n;
+		}
+		size_t FS_fwrite( IN_BYTECAP(size) const void *, size_t ) override { return 0; }
+		bool FS_setmode( FileMode_t ) override { return true; }
+		size_t FS_vfprintf( const char *, va_list ) override { return 0; }
+		int FS_ferror() override { return 0; }
+		int FS_fflush() override { return 0; }
+		char *FS_fgets( OUT_Z_CAP(destSize) char *dest, int destSize ) override
+		{
+			if ( destSize <= 0 )
+				return nullptr;
+			const int64 size = Size();
+			if ( m_nPos >= size )
+			{
+				m_bEof = true;
+				return nullptr;
+			}
+			int i = 0;
+			while ( i < destSize - 1 && m_nPos < size )
+			{
+				const char c = ( *m_Data )[ static_cast<size_t>( m_nPos++ ) ];
+				dest[i++] = c;
+				if ( c == '\n' )
+					break;
+			}
+			dest[i] = '\0';
+			return dest;
+		}
+
+	private:
+		int64 Size() const { return m_Data ? static_cast<int64>( m_Data->size() ) : 0; }
+
+		FileBytes m_Data;
+		int64 m_nPos = 0;
+		bool m_bEof = false;
+	};
+
+	struct MemEntry_t
+	{
+		FileBytes data;
+		std::list< std::string >::iterator lru;
+	};
+
+	std::mutex s_MemMutex;
+	std::unordered_map< std::string, MemEntry_t > s_MemFiles;
+	std::list< std::string > s_MemLru;	// front = most recently used
+	size_t s_nMemBytes = 0;
+
+	bool IsMemCacheable( const std::string &path )
+	{
+		static const char *const kSkip[] = { "\\save\\", "\\cache\\", "\\cfg\\", "\\screenshots\\", "\\downloadlists\\",
+			"\\demos\\", "\\splits\\", "\\graphs\\", "\\logs\\", "\\bin\\", "\\htmlui\\" };
+		for ( const char *skip : kSkip )
+		{
+			if ( path.find( skip ) != std::string::npos )
+				return false;
+		}
+		const size_t dot = path.find_last_of( '.' );
+		if ( dot == std::string::npos )
+			return false;
+		const std::string ext = path.substr( dot );
+		return ext != ".vpk" && ext != ".dll" && ext != ".exe" && ext != ".log" && ext != ".sav" && ext != ".cfg";
+	}
+}
+
+static void MemFile_Invalidate( const std::string &lowerPath )
+{
+	std::lock_guard lock( s_MemMutex );
+	auto it = s_MemFiles.find( lowerPath );
+	if ( it == s_MemFiles.end() )
+		return;
+	s_nMemBytes -= it->second.data->size();
+	s_MemLru.erase( it->second.lru );
+	s_MemFiles.erase( it );
+}
+
+enum class MemOpen_t { Opened, Missing, Fallback };
+
+// Serves a read-only open from memory, reading the whole file the first time.
+static MemOpen_t MemFile_Open( const char *pFullPath, CStdFilesystemFile **ppFile, int64 *pSize )
+{
+	if ( !fs_file_mem_cache.GetBool() )
+		return MemOpen_t::Fallback;
+
+	std::string key;
+	LowerSlashes( pFullPath, key );
+	if ( !IsMemCacheable( key ) )
+		return MemOpen_t::Fallback;
+
+	{
+		std::lock_guard lock( s_MemMutex );
+		auto it = s_MemFiles.find( key );
+		if ( it != s_MemFiles.end() )
+		{
+			s_MemLru.splice( s_MemLru.begin(), s_MemLru, it->second.lru );
+			*ppFile = new CMemFsFile( it->second.data );
+			if ( pSize )
+				*pSize = static_cast<int64>( it->second.data->size() );
+			return MemOpen_t::Opened;
+		}
+	}
+
+	HANDLE h = ::CreateFileA( pFullPath, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
+		FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr );
+	if ( h == INVALID_HANDLE_VALUE )
+	{
+		const DWORD err = ::GetLastError();
+		return ( err == ERROR_FILE_NOT_FOUND || err == ERROR_PATH_NOT_FOUND ) ? MemOpen_t::Missing : MemOpen_t::Fallback;
+	}
+
+	const size_t limit = static_cast<size_t>( fs_file_mem_cache_mb.GetInt() ) * 1024 * 1024;
+	LARGE_INTEGER fileSize;
+	if ( !::GetFileSizeEx( h, &fileSize ) || fileSize.QuadPart > 128ll * 1024 * 1024 || static_cast<size_t>( fileSize.QuadPart ) > limit / 4 )
+	{
+		::CloseHandle( h );
+		return MemOpen_t::Fallback;
+	}
+
+	auto bytes = std::make_shared< std::vector< char > >( static_cast<size_t>( fileSize.QuadPart ) );
+	size_t done = 0;
+	while ( done < bytes->size() )
+	{
+		DWORD chunk = 0;
+		const DWORD want = static_cast<DWORD>( std::min< size_t >( bytes->size() - done, 64u * 1024 * 1024 ) );
+		if ( !::ReadFile( h, bytes->data() + done, want, &chunk, nullptr ) || chunk == 0 )
+			break;
+		done += chunk;
+	}
+	::CloseHandle( h );
+	if ( done != bytes->size() )
+		return MemOpen_t::Fallback;
+
+	FileBytes data = std::move( bytes );
+	{
+		std::lock_guard lock( s_MemMutex );
+		if ( s_MemFiles.find( key ) == s_MemFiles.end() )
+		{
+			s_MemLru.push_front( key );
+			s_MemFiles.emplace( key, MemEntry_t{ data, s_MemLru.begin() } );
+			s_nMemBytes += data->size();
+			while ( s_nMemBytes > limit && s_MemLru.size() > 1 )
+			{
+				auto victim = s_MemFiles.find( s_MemLru.back() );
+				s_nMemBytes -= victim->second.data->size();
+				s_MemFiles.erase( victim );
+				s_MemLru.pop_back();
+			}
+		}
+	}
+
+	*ppFile = new CMemFsFile( data );
+	if ( pSize )
+		*pSize = static_cast<int64>( data->size() );
+	return MemOpen_t::Opened;
+}
+
+CON_COMMAND( fs_file_mem_cache_info, "Show how many files fs_file_mem_cache holds." )
+{
+	std::lock_guard lock( s_MemMutex );
+	Msg( "fs_file_mem_cache: %zu files, %.1f MB\n", s_MemFiles.size(), s_nMemBytes / ( 1024.0 * 1024.0 ) );
+}
+#endif
+
+//-----------------------------------------------------------------------------
 // Purpose: low-level filesystem wrapper
 //-----------------------------------------------------------------------------
 FILE *CFileSystem_Stdio::FS_fopen( const char *filenameT, const char *options, unsigned flags, int64 *size )
 {
+	IoTimer_t ioTimer( s_IoOpen );
 	char filename[ MAX_PATH ];
 	CBaseFileSystem::FixUpPath ( filenameT, filename );
+
+	if ( strpbrk( options, "wa+" ) )
+		LooseFile_Invalidate( filename );
+	else if ( !LooseFile_MayExist( filename ) )
+	{
+		++s_IoOpen.fails;
+		++s_IoSkip.count;
+		return nullptr;
+	}
 
 	alignas(FILE *) CStdFilesystemFile *pFile = nullptr;
 
 #ifdef _WIN32
+	if ( !strpbrk( options, "wa+" ) )
+	{
+		const MemOpen_t mem = MemFile_Open( filename, &pFile, size );
+		if ( mem == MemOpen_t::Opened )
+			return reinterpret_cast<FILE *>(pFile);
+		if ( mem == MemOpen_t::Missing )
+		{
+			++s_IoOpen.fails;
+			return nullptr;
+		}
+	}
+
 	if ( CWin32ReadOnlyFile::CanOpen( filename, options ) )
 	{
 		pFile = CWin32ReadOnlyFile::FS_fopen( filename, options, size );
 		if ( pFile )
 		{
+			if ( fs_iostats_spew.GetBool() )
+				Msg( "FS open ok   %s\n", filename );
 			return reinterpret_cast<FILE *>(pFile);
+		}
+
+		// SourceSpeedrunMod: a missing file is missing for fopen too; trying
+		// again doubled the cost of every failed lookup.
+		const DWORD err = ::GetLastError();
+		if ( err == ERROR_FILE_NOT_FOUND || err == ERROR_PATH_NOT_FOUND )
+		{
+			++s_IoOpen.fails;
+			if ( fs_iostats_spew.GetBool() )
+				Msg( "FS open miss %s\n", filename );
+			return nullptr;
 		}
 	}
 #endif
 
 	pFile = CStdioFile::FS_fopen( filename, options, size );
+	if ( !pFile )
+		++s_IoOpen.fails;
+	if ( fs_iostats_spew.GetBool() )
+		Msg( "FS open %s %s (%s)\n", pFile ? "ok  " : "miss", filename, options );
 	return reinterpret_cast<FILE *>(pFile);
 }
 
@@ -477,8 +932,10 @@ size_t CFileSystem_Stdio::FS_fread( OUT_BYTECAP(destSize) void *dest, size_t des
 		tmPlotI32( TELEMETRY_LEVEL0, TMPT_MEMORY, 0, size, "FileBytesRead" );
 	}
 
+	IoTimer_t ioTimer( s_IoRead );
 	auto *pFile = reinterpret_cast<CStdFilesystemFile *>(fp);
 	size_t nBytesRead = pFile->FS_fread( dest, destSize, size);
+	s_IoRead.bytes += static_cast<int64>( nBytesRead );
 
 	Trace_FRead( nBytesRead, fp );
 
@@ -592,7 +1049,17 @@ int CFileSystem_Stdio::FS_stat( const char *pathT, struct _stat *buf, bool *pbLo
 
 	CBaseFileSystem::FixUpPath ( pathT, path );
 
+	IoTimer_t ioTimer( s_IoStat );
+	if ( !LooseFile_MayExist( path ) )
+	{
+		++s_IoStat.fails;
+		++s_IoSkip.count;
+		errno = ENOENT;
+		return -1;
+	}
 	int rt = _stat( path, buf );
+	if ( rt != 0 )
+		++s_IoStat.fails;
 
 #if defined(LINUX)
 	if ( rt == -1 )
@@ -616,6 +1083,7 @@ HANDLE CFileSystem_Stdio::FS_FindFirstFile(const char *findnameT, WIN32_FIND_DAT
 
 	CBaseFileSystem::FixUpPath ( findnameT, findname );
 
+	IoTimer_t ioTimer( s_IoFind );
 	return ::FindFirstFile(findname, dat);
 }
 

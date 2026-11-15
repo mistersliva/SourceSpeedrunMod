@@ -785,6 +785,8 @@ CON_COMMAND( reload, "Reload the most recent saved game (add setpos to jump to c
 	// Restart that game if there is
 	// Otherwise, restart the starting game map
 #ifndef SWDS
+	// SourceSpeedrunMod: let a save that is still being written finish first.
+	saverestore->FinishAsyncSave();
 	pSaveName = saverestore->FindRecentSave( name, sizeof( name ) );
 
 	// Put up loading plaque
