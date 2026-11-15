@@ -103,7 +103,7 @@ static ConVar cl_ignorepackets( "cl_ignorepackets", "0", FCVAR_CHEAT, "Force cli
 // SourceSpeedrunMod: Valve holds rendering for 0.25 s after every singleplayer
 // load so client values can settle; the loading screen stays up meanwhile.
 // A few ticks are enough on current hardware.
-static ConVar cl_load_settle_time( "cl_load_settle_time", "0", FCVAR_ARCHIVE,
+static ConVar cl_load_settle_time( "cl_load_settle_time", "0.015", FCVAR_ARCHIVE,
 	"Seconds the first frame is held back after a singleplayer map load (Valve default 0.25).", true, 0.0f, true, 1.0f );
 static ConVar cl_playback_screenshots( "cl_playback_screenshots", "0", 0, "Allows the client to playback screenshot and jpeg commands in demos." );
 

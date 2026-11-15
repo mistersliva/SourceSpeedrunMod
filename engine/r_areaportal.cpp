@@ -253,6 +253,9 @@ static void R_FlowThroughArea( int area, const Vector &vecVisOrigin, const CPort
 	const VisOverrideData_t* pVisData, float *pReflectionWaterHeight )
 {
 #ifndef SWDS
+	if ( area < 0 || area >= g_AreaCullInfo.Count() )
+		return;
+
 	// Update this area's frustum.
 	if( g_AreaCullInfo[area].m_GlobalCounter != g_GlobalCounter )
 	{
@@ -622,6 +625,17 @@ void R_SetupAreaBits( int iForceViewLeaf /* = -1 */, const VisOverrideData_t* pV
 {
 	IncrementGlobalCounter();
 
+	// SourceSpeedrunMod: a frame can be drawn while a level is being torn down
+	// or brought up (the area table is empty then) and crashed in
+	// R_FlowThroughArea. Draw nothing for that frame instead.
+	if ( !host_state.worldbrush || g_AreaCullInfo.Count() != host_state.worldbrush->m_nAreas || g_AreaCullInfo.Count() == 0 )
+	{
+		memset( g_RenderAreaBits, 0, sizeof( g_RenderAreaBits ) );
+		g_nVisibleAreas = 0;
+		g_bViewerInSolidSpace = true;
+		return;
+	}
+
 	g_bViewerInSolidSpace = false;
 
 	// Clear the visible area bits.
@@ -698,6 +712,8 @@ void R_SetupAreaBits( int iForceViewLeaf /* = -1 */, const VisOverrideData_t* pV
 
 const Frustum_t* GetAreaFrustum( int area )
 {
+	if ( area < 0 || area >= g_AreaCullInfo.Count() )
+		return &g_Frustum;
 	if ( g_AreaCullInfo[area].m_GlobalCounter == g_GlobalCounter )
 		return &g_AreaCullInfo[area].m_Frustum;
 	else

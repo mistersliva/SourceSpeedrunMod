@@ -1140,6 +1140,10 @@ void R_CheckForLightingConfigChanges()
 		// SourceSpeedrunMod: static props were lit while loading; only relight
 		// them when the lighting configuration really changed.
 		const bool bRelightProps = MaterialConfigLightingChanged() || !g_bLightmapRebuildIsLevelStart;
+		// Lightmap pages kept by the material system only need a partial rebuild
+		// when this is the plain level-start rebuild.
+		extern bool g_bLightmapRedownloadAllowPartial;
+		g_bLightmapRedownloadAllowPartial = g_bLightmapRebuildIsLevelStart && !MaterialConfigLightingChanged();
 		g_bLightmapRebuildIsLevelStart = false;
 		ClearMaterialConfigLightingChanged();
 		ConMsg( "Redownloading all lightmaps\n" );

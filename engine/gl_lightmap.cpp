@@ -860,8 +860,44 @@ void R_BuildLightMapGuts( dlight_t *pLights, SurfaceHandle_t surfID, const matri
 	UpdateLightmapTextures( surfID, needsBumpmap );
 }
 
+//-----------------------------------------------------------------------------
+// SourceSpeedrunMod: partial lightmap rebuild after a reload of the same map.
+// When the material system kept the previous lightmap pages (same map, same
+// layout), only surfaces whose texels can differ from a fresh build are
+// rebuilt: ones with switchable/animated light styles and ones that were
+// rebuilt for any other reason (dynamic lights) since the last full build.
+//-----------------------------------------------------------------------------
+static CUtlVector<unsigned char> g_LightmapSurfDirty;
+static char g_szLightmapDirtyMap[MAX_PATH];
+static bool g_bInFullLightmapRedownload = false;
+bool g_bLightmapRedownloadAllowPartial = false;
+
+static inline void MarkLightmapSurfDirty( SurfaceHandle_t surfID )
+{
+	if ( g_bInFullLightmapRedownload || !host_state.worldbrush )
+		return;
+	const int idx = MSurf_Index( surfID );
+	if ( idx >= 0 && idx < g_LightmapSurfDirty.Count() )
+		g_LightmapSurfDirty[idx] = 1;
+}
+
+static inline bool SurfHasNonDefaultLightstyle( SurfaceHandle_t surfID )
+{
+	const msurfacelighting_t *pLighting = SurfaceLighting( surfID );
+	for ( int i = 0; i < MAXLIGHTMAPS; ++i )
+	{
+		const unsigned char style = pLighting->m_nStyles[i];
+		if ( style == 255 )
+			break;
+		if ( style != 0 )
+			return true;
+	}
+	return false;
+}
+
 void R_BuildLightMap( dlight_t *pLights, ICallQueue *pCallQueue, SurfaceHandle_t surfID, const matrix3x4_t &entityToWorld, bool bOnlyUseLightStyles )
 {
+	MarkLightmapSurfDirty( surfID );
 	bool needsBumpmap = SurfNeedsBumpedLightmaps( surfID );
 	bool needsLightmap = SurfNeedsLightmap( surfID );
 
@@ -1019,13 +1055,33 @@ void R_RedownloadAllLightmaps()
 		
 			matrix3x4_t xform;
 			SetIdentityMatrix(xform);
+			const char *pMapName = host_state.worldmodel ? host_state.worldmodel->strName.String() : "";
+			static ConVarRef mat_lightmap_pages_reused( "mat_lightmap_pages_reused" );
+			const bool bPartial = g_bLightmapRedownloadAllowPartial && mat_lightmap_pages_reused.IsValid() &&
+				mat_lightmap_pages_reused.GetBool() && g_LightmapSurfDirty.Count() == iSurfaceCount &&
+				V_streq( pMapName, g_szLightmapDirtyMap );
+			int nRebuilt = 0;
+
+			g_bInFullLightmapRedownload = true;
 			for( int surfaceIndex = 0; surfaceIndex < iSurfaceCount; surfaceIndex++ )
 			{
 				SurfaceHandle_t surfID = pSortedSurfaces[surfaceIndex];
 
 				ASSERT_SURF_VALID( surfID );
+				if ( bPartial && !g_LightmapSurfDirty[MSurf_Index( surfID )] && !SurfHasNonDefaultLightstyle( surfID ) )
+					continue;
 				R_BuildLightMap( &cl_dlights[0], pCallQueue, surfID, xform, bOnlyUseLightStyles );
+				++nRebuilt;
 			}
+			g_bInFullLightmapRedownload = false;
+
+			// Everything now matches a fresh build of this map.
+			g_LightmapSurfDirty.SetCount( iSurfaceCount );
+			if ( iSurfaceCount > 0 )
+				memset( g_LightmapSurfDirty.Base(), 0, iSurfaceCount );
+			V_strcpy_safe( g_szLightmapDirtyMap, pMapName );
+			if ( bPartial )
+				DevMsg( "Lightmap pages reused: rebuilt %d of %d surfaces.\n", nRebuilt, iSurfaceCount );
 
 			if( pCallQueue )
 				pCallQueue->QueueCall( materials, &IMaterialSystem::EndUpdateLightmaps );
@@ -1051,6 +1107,7 @@ void R_RedownloadAllLightmaps()
 	DevMsg( "R_RedownloadAllLightmaps took %.3f msec!\n", elapsed );
 
 	g_RebuildLightmaps = false;
+	g_bLightmapRedownloadAllowPartial = false;
 }
 
 //-----------------------------------------------------------------------------

@@ -192,6 +192,17 @@ private:
 		STATE_RELEASED		//	Lightmaps in released state - usually due to lost/released D3D device, D3D operations disallowed, Restore() call to follow
 	};
 	LightmapsState						m_eLightmapsState;
+
+	// SourceSpeedrunMod: lightmap pages of the previous level, kept until the
+	// new allocation is known, so a reload of the same map can reuse them.
+	void									ReleasePrevLightmapPages();
+	LightmapPageInfo_t					*m_pPrevLightmapPages = nullptr;
+	CUtlVector<ShaderAPITextureHandle_t> m_PrevLightmapPageTextureHandles;
+	int									m_nPrevNumLightmapPages = 0;
+	uint64									m_nPrevAllocSignature = 0;
+	int									m_nPrevHDRType = -1;
+	uint64									m_nAllocSignature = 0;
+	int									m_nPagesHDRType = -1;
 };
 
 //-----------------------------------------------------------------------------

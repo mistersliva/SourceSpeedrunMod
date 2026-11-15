@@ -19,6 +19,26 @@
 #include "tier0/memdbgon.h"
 #include "bitmap/float_bm.h"
 
+// SourceSpeedrunMod: see CMatLightmaps::EndLightmapAllocation.
+static ConVar mat_lightmap_reuse( "mat_lightmap_reuse", "1", FCVAR_ARCHIVE,
+	"Keep lightmap pages when the same map is loaded again (save loads), so they are not rebuilt." );
+// Read by the engine after a level load: 1 when the pages of the previous level were kept.
+static ConVar mat_lightmap_pages_reused( "mat_lightmap_pages_reused", "0", FCVAR_HIDDEN | FCVAR_DONTRECORD, "" );
+
+static inline uint64 MixLightmapSignature( uint64 h, uint64 v )
+{
+	h ^= v + 0x9E3779B97F4A7C15ull + ( h << 6 ) + ( h >> 2 );
+	return h * 0xFF51AFD7ED558CCDull;
+}
+
+static inline uint64 HashLightmapMaterialName( const char *pName )
+{
+	uint64 h = 1469598103934665603ull;
+	for ( ; pName && *pName; ++pName )
+		h = ( h ^ static_cast<unsigned char>( *pName ) ) * 1099511628211ull;
+	return h;
+}
+
 static ConVar mat_lightmap_pfms( "mat_lightmap_pfms", "0", FCVAR_MATERIAL_SYSTEM_THREAD, "Outputs .pfm files containing lightmap data for each lightmap page when a level exits." ); // Write PFM files for each lightmap page in the game directory when exiting a level 
 
 #define USE_32BIT_LIGHTMAPS_ON_360 //uncomment to use 32bit lightmaps, be sure to keep this in sync with the same #define in stdshaders/lightmappedgeneric_ps2_3_x.h
@@ -82,6 +102,7 @@ CMatLightmaps::CMatLightmaps() : m_LightmapPixelWriter()
 //-----------------------------------------------------------------------------
 void CMatLightmaps::Shutdown( )
 {
+	ReleasePrevLightmapPages();
 	// Clean up all lightmaps
 	CleanupLightmaps();
 }
@@ -271,10 +292,42 @@ void CMatLightmaps::ResetMaterialLightmapPageInfo( void )
 //-----------------------------------------------------------------------------
 // This is called before any lightmap allocations take place
 //-----------------------------------------------------------------------------
+void CMatLightmaps::ReleasePrevLightmapPages()
+{
+	if ( !m_pPrevLightmapPages )
+		return;
+	for ( int i = 0; i < m_PrevLightmapPageTextureHandles.Count(); ++i )
+		g_pShaderAPI->DeleteTexture( m_PrevLightmapPageTextureHandles[i] );
+	m_PrevLightmapPageTextureHandles.RemoveAll();
+	delete [] m_pPrevLightmapPages;
+	m_pPrevLightmapPages = nullptr;
+	m_nPrevNumLightmapPages = 0;
+}
+
 void CMatLightmaps::BeginLightmapAllocation()
 {	
-	// delete old lightmap pages
-	CleanupLightmaps();
+	ReleasePrevLightmapPages();
+	if ( mat_lightmap_reuse.GetBool() && !mat_lightmap_pfms.GetBool() && m_pLightmapPages &&
+		 m_eLightmapsState == STATE_DEFAULT && !m_pLightmapDataPtrArray )
+	{
+		// SourceSpeedrunMod: keep the pages until EndLightmapAllocation knows
+		// whether the new level asks for exactly the same layout.
+		m_pPrevLightmapPages = m_pLightmapPages;
+		m_PrevLightmapPageTextureHandles.RemoveAll();
+		for ( int i = 0; i < GetNumLightmapPages(); ++i )
+			m_PrevLightmapPageTextureHandles.AddToTail( m_LightmapPageTextureHandles[i] );
+		m_nPrevNumLightmapPages = m_NumLightmapPages;
+		m_nPrevAllocSignature = m_nAllocSignature;
+		m_nPrevHDRType = m_nPagesHDRType;
+		m_pLightmapPages = nullptr;
+		m_NumLightmapPages = 0;
+	}
+	else
+	{
+		// delete old lightmap pages
+		CleanupLightmaps();
+	}
+	m_nAllocSignature = 1469598103934665603ull;
 
 	m_ImagePackers.RemoveAll();
 	m_ImagePackers[m_ImagePackers.AddToTail()].Reset( 0, GetMaxLightmapPageWidth(), GetMaxLightmapPageHeight() );
@@ -305,6 +358,8 @@ int CMatLightmaps::AllocateLightmap( int width, int height,
 		return m_numSortIDs;
 	}
 	pMaterial = pMaterial->GetRealTimeVersion(); //always work with the real time versions of materials internally
+	m_nAllocSignature = MixLightmapSignature( m_nAllocSignature, ( static_cast<uint64>( width ) << 32 ) | static_cast<uint32>( height ) );
+	m_nAllocSignature = MixLightmapSignature( m_nAllocSignature, HashLightmapMaterialName( pMaterial->GetName() ) );
 	
 	// material change
 	intp nPackCount = m_ImagePackers.Count();
@@ -413,8 +468,42 @@ void CMatLightmaps::EndLightmapAllocation()
 		m_pLightmapPages[i].m_Width = (unsigned short)(lastStaticLightmap ? lastLightmapPageWidth : GetMaxLightmapPageWidth());
 		m_pLightmapPages[i].m_Height = (unsigned short)(lastStaticLightmap ? lastLightmapPageHeight : GetMaxLightmapPageHeight());
 		m_pLightmapPages[i].m_Flags = 0;
+	}
 
-		AllocateLightmapTexture( i );
+	// SourceSpeedrunMod: the same map asked for exactly the same lightmaps (same
+	// requests in the same order, so the same packing): keep the previous pages
+	// and their contents instead of creating and clearing new textures. The
+	// engine then only rebuilds the surfaces that can differ.
+	const int hdrType = HardwareConfig()->GetHDRType();
+	bool bReuse = m_pPrevLightmapPages && m_eLightmapsState == STATE_DEFAULT && !mat_lightmap_pfms.GetBool() &&
+		m_nPrevNumLightmapPages == GetNumLightmapPages() && m_nPrevAllocSignature == m_nAllocSignature &&
+		m_nPrevHDRType == hdrType && m_PrevLightmapPageTextureHandles.Count() == GetNumLightmapPages();
+	for ( int i = 0; bReuse && i < GetNumLightmapPages(); i++ )
+	{
+		bReuse = m_pPrevLightmapPages[i].m_Width == m_pLightmapPages[i].m_Width &&
+			m_pPrevLightmapPages[i].m_Height == m_pLightmapPages[i].m_Height;
+	}
+	if ( bReuse )
+	{
+		m_LightmapPageTextureHandles.RemoveAll();
+		for ( int i = 0; i < GetNumLightmapPages(); i++ )
+			m_LightmapPageTextureHandles.AddToTail( m_PrevLightmapPageTextureHandles[i] );
+		m_PrevLightmapPageTextureHandles.RemoveAll();
+		delete [] m_pPrevLightmapPages;
+		m_pPrevLightmapPages = nullptr;
+		m_nPrevNumLightmapPages = 0;
+	}
+	else
+	{
+		ReleasePrevLightmapPages();
+	}
+	m_nPagesHDRType = hdrType;
+	mat_lightmap_pages_reused.SetValue( bReuse ? 1 : 0 );
+
+	for ( int i = 0; i < GetNumLightmapPages(); i++ )
+	{
+		if ( !bReuse )
+			AllocateLightmapTexture( i );
 
         if ( mat_lightmap_pfms.GetBool())
         {
@@ -507,6 +596,7 @@ int	CMatLightmaps::AllocateWhiteLightmap( IMaterial *iMaterial )
 		return m_numSortIDs;
 	}
 	pMaterial = pMaterial->GetRealTimeVersion(); //always work with the real time versions of materials internally
+	m_nAllocSignature = MixLightmapSignature( m_nAllocSignature, HashLightmapMaterialName( pMaterial->GetName() ) ^ 0xFFFFull );
 
 	if ( !m_currentWhiteLightmapMaterial || ( m_currentWhiteLightmapMaterial != pMaterial ) )
 	{
@@ -539,6 +629,7 @@ int	CMatLightmaps::AllocateWhiteLightmap( IMaterial *iMaterial )
 //-----------------------------------------------------------------------------
 void CMatLightmaps::ReleaseLightmapPages()
 {
+	ReleasePrevLightmapPages();
 	switch ( m_eLightmapsState )
 	{
 	case STATE_DEFAULT:
