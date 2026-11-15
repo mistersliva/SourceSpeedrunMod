@@ -1899,14 +1899,17 @@ template<VertexCompressionType_t T> void CStudioRender::R_StudioRestoreMesh( mst
 		mstudiovertex_t &vert = pVertices[n];
 
 		meshBuilder.Position3fv( vert.m_vecPosition.Base() );
-		meshBuilder.CompressedNormal3fv<T>( vert.m_vecNormal.Base() );
-		meshBuilder.TexCoord2fv( 0, vert.m_vecTexCoord.Base() );
-
-		if (pStudioTangentS)
+		if ( pStudioTangentS )
 		{
 			Assert( pStudioTangentS[n].w == -1.0f || pStudioTangentS[n].w == 1.0f );
-			meshBuilder.CompressedUserData<T>( pStudioTangentS[n].Base() );
+			// SourceSpeedrunMod: one write for normal + tangent (no VB read-back)
+			meshBuilder.CompressedNormalAndTangent<T>( vert.m_vecNormal.Base(), pStudioTangentS[n].Base() );
 		}
+		else
+		{
+			meshBuilder.CompressedNormal3fv<T>( vert.m_vecNormal.Base() );
+		}
+		meshBuilder.TexCoord2fv( 0, vert.m_vecTexCoord.Base() );
 
 		meshBuilder.Color4ub( 255, 255, 255, 255 );
 	}

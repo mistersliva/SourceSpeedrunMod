@@ -1,4 +1,4 @@
-//========= Copyright Valve Corporation, All rights reserved. ============//
+﻿//========= Copyright Valve Corporation, All rights reserved. ============//
 //
 // Purpose: 
 //
@@ -31,6 +31,95 @@
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
+
+//-----------------------------------------------------------------------------
+// SourceSpeedrunMod: memory-mapped VPK archives (Windows).
+//
+// The read cache below reads whole 1 MB lines with blocking ReadFile calls,
+// eight lines at a time, even when a few KB are needed; loading a new map
+// does hundreds of those. With a 64-bit address space every archive can be
+// mapped instead: reads become memcpy from the view, the OS pages in only the
+// data that is touched (with its own read-ahead) and repeated reads come from
+// memory. Disable with -novpkmmap.
+//-----------------------------------------------------------------------------
+#ifdef IS_WINDOWS_PC
+#include "tier0/icommandline.h"
+#include "tier1/utlmap.h"
+
+namespace
+{
+	struct VpkView_t
+	{
+		const uint8 *base = nullptr;
+		int64 size = 0;
+		bool failed = false;
+	};
+
+	CThreadFastMutex s_VpkViewMutex;
+	CUtlMap< HANDLE, VpkView_t > s_VpkViews( DefLessFunc( HANDLE ) );
+
+	bool VpkMmapEnabled()
+	{
+		static const bool bEnabled = !CommandLine()->CheckParm( "-novpkmmap" );
+		return bEnabled;
+	}
+
+	bool GetVpkView( HANDLE hFile, const uint8 *&base, int64 &size )
+	{
+		AUTO_LOCK( s_VpkViewMutex );
+		auto idx = s_VpkViews.Find( hFile );
+		if ( idx == s_VpkViews.InvalidIndex() )
+		{
+			VpkView_t view;
+			LARGE_INTEGER li;
+			if ( ::GetFileSizeEx( hFile, &li ) && li.QuadPart > 0 )
+			{
+				HANDLE hMap = ::CreateFileMappingA( hFile, nullptr, PAGE_READONLY, 0, 0, nullptr );
+				if ( hMap )
+				{
+					view.base = static_cast<const uint8 *>( ::MapViewOfFile( hMap, FILE_MAP_READ, 0, 0, 0 ) );
+					::CloseHandle( hMap );	// the view keeps the mapping alive
+					view.size = li.QuadPart;
+				}
+			}
+			view.failed = !view.base;
+			idx = s_VpkViews.Insert( hFile, view );
+		}
+		const VpkView_t &view = s_VpkViews[idx];
+		if ( view.failed )
+			return false;
+		base = view.base;
+		size = view.size;
+		return true;
+	}
+
+	// Separate function: __try cannot share a frame with C++ unwinding.
+	bool CopyFromView( void *pOut, const uint8 *pSrc, int nBytes )
+	{
+		__try
+		{
+			memcpy( pOut, pSrc, nBytes );
+			return true;
+		}
+		__except ( GetExceptionCode() == EXCEPTION_IN_PAGE_ERROR ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH )
+		{
+			return false;
+		}
+	}
+}
+
+// Called when an archive handle is closed, before the handle value can be reused.
+void VpkMmap_Release( HANDLE hFile )
+{
+	AUTO_LOCK( s_VpkViewMutex );
+	auto idx = s_VpkViews.Find( hFile );
+	if ( idx == s_VpkViews.InvalidIndex() )
+		return;
+	if ( s_VpkViews[idx].base )
+		::UnmapViewOfFile( s_VpkViews[idx].base );
+	s_VpkViews.RemoveAt( idx );
+}
+#endif
 
 
 typedef uint16 PackFileIndex_t;
@@ -472,6 +561,7 @@ CPackedStore::~CPackedStore( void )
 		if ( fileHandle.m_nFileNumber != -1 )
 		{
 #ifdef IS_WINDOWS_PC
+			VpkMmap_Release( fileHandle.m_hFileHandle );
 			CloseHandle( fileHandle.m_hFileHandle );
 #else
 			m_pFileSystem->Close( fileHandle.m_hFileHandle );
@@ -1207,6 +1297,19 @@ int CPackedStore::ReadData( CPackedStoreFileHandle &handle, void *pOutData, int 
 			}
 
 			int nRead;
+#ifdef IS_WINDOWS_PC
+			// SourceSpeedrunMod: serve the read from the mapped archive when possible.
+			const uint8 *pView = nullptr;
+			int64 nViewSize = 0;
+			if ( VpkMmapEnabled() && nDesiredPos >= 0 && GetVpkView( fHandle.m_hFileHandle, pView, nViewSize ) &&
+				 int64( nDesiredPos ) + nNumBytes <= nViewSize && CopyFromView( pOutData, pView + nDesiredPos, nNumBytes ) )
+			{
+				handle.m_nCurrentFileOffset += nNumBytes;
+				nRet += nNumBytes;
+				m_PackedStoreReadCache.RetryAllBadCacheLines();
+				return nRet;
+			}
+#endif
 			if ( m_PackedStoreReadCache.BCanSatisfyFromReadCache( (uint8 *)pOutData, handle, fHandle, nDesiredPos, nNumBytes, nRead ) )
 			{
 				handle.m_nCurrentFileOffset += nRead;

@@ -1392,6 +1392,24 @@ void CEngineVGui::ShowErrorMessage()
 //-----------------------------------------------------------------------------
 // Purpose: Updates progress
 //-----------------------------------------------------------------------------
+// SourceSpeedrunMod: each loading progress update used to render a full frame
+// (BeginFrame forces a GPU sync and Present waits for the driver); a load
+// sends dozens of them. Redraw the loading screen at most every interval.
+//-----------------------------------------------------------------------------
+static ConVar cl_loading_redraw_interval( "cl_loading_redraw_interval", "0.1", FCVAR_ARCHIVE,
+	"Minimum seconds between loading screen redraws while a level loads (0 = every progress update).", true, 0.0f, true, 1.0f );
+
+static bool ShouldRedrawLoadingScreen()
+{
+	static double s_flLastRedraw = 0.0;
+	const double now = Plat_FloatTime();
+	if ( now - s_flLastRedraw < cl_loading_redraw_interval.GetFloat() )
+		return false;
+	s_flLastRedraw = now;
+	return true;
+}
+
+//-----------------------------------------------------------------------------
 void CEngineVGui::UpdateProgressBar(LevelLoadingProgress_e progress)
 {
 	if (!staticGameUIFuncs)
@@ -1449,7 +1467,8 @@ void CEngineVGui::UpdateProgressBar(LevelLoadingProgress_e progress)
 	{
 		// re-render vgui on screen
 		extern void V_RenderVGuiOnly();
-		V_RenderVGuiOnly();
+		if ( ShouldRedrawLoadingScreen() )
+			V_RenderVGuiOnly();
 	}
 
 	m_eLastProgressPoint = progress;
@@ -1470,7 +1489,8 @@ void CEngineVGui::UpdateCustomProgressBar( float progress, const wchar_t *desc )
 	{
 		// re-render vgui on screen
 		extern void V_RenderVGuiOnly();
-		V_RenderVGuiOnly();
+		if ( ShouldRedrawLoadingScreen() )
+			V_RenderVGuiOnly();
 	}
 }
 
@@ -1507,7 +1527,8 @@ void CEngineVGui::UpdateProgressBar( float progress )
 	{
 		// re-render vgui on screen
 		extern void V_RenderVGuiOnly();
-		V_RenderVGuiOnly();
+		if ( ShouldRedrawLoadingScreen() )
+			V_RenderVGuiOnly();
 	}
 }
 

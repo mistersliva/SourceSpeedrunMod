@@ -341,7 +341,7 @@ bool CNPC_Furniture::CreateVPhysics( void )
 	if ( !m_BoneFollowerManager.GetNumBoneFollowers() )
 	{
 		KeyValuesAD modelKeyValues("");
-		if ( modelKeyValues->LoadFromBuffer( modelinfo->GetModelName( GetModel() ), modelinfo->GetModelKeyValueText( GetModel() ) ) )
+		if ( UTIL_LoadModelKeyValues( modelKeyValues, GetModel() ) )
 		{
 			// Do we have a bone follower section?
 			KeyValues *pkvBoneFollowers = modelKeyValues->FindKey("bone_followers");

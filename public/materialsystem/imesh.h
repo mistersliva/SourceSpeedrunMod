@@ -553,6 +553,8 @@ public:
 	void UserData( const float* pData );
 	// Generic per-vertex data (templatized for code which needs to support compressed vertices)
 	template <VertexCompressionType_t T> void CompressedUserData( const float* pData );
+	// SourceSpeedrunMod: normal + tangent in one write (no read-back from write-combined VB memory).
+	template <VertexCompressionType_t T> void CompressedNormalAndTangent( const float *pNormal, const float *pTangent );
 
 	// Fast Vertex! No need to call advance vertex, and no random access allowed. 
 	// WARNING - these are low level functions that are intended only for use
@@ -2095,6 +2097,36 @@ inline void CVertexBuilder::UserData( const float* pData )
 //-----------------------------------------------------------------------------
 // Templatized generic per-vertex data setting method which supports compressed vertices
 //-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+// SourceSpeedrunMod: writes the compressed normal and tangent together. The
+// UBYTE4 format keeps both in one 32-bit word; writing them separately made
+// CompressedUserData read the normal back from the locked vertex buffer, which
+// is write-combined memory and very slow to read (~20% of a level load).
+//-----------------------------------------------------------------------------
+template <VertexCompressionType_t T> inline void CVertexBuilder::CompressedNormalAndTangent( const float *pNormal, const float *pTangent )
+{
+#if ( COMPRESSED_NORMALS_TYPE == COMPRESSED_NORMALS_COMBINEDTANGENTS_UBYTE4 )
+	if constexpr ( T == VERTEX_COMPRESSION_ON )
+	{
+		Assert( T == m_CompressionType );
+		Assert( m_pNormal && m_pCurrNormal );
+		unsigned int normalData = 0;
+		PackNormal_UBYTE4( pNormal[0], pNormal[1], pNormal[2], &normalData );
+		Assert( ( normalData & 0xFFFF0000 ) == 0 );
+		unsigned int tangentData = 0;
+		PackNormal_UBYTE4( pTangent, &tangentData, true, pTangent[3] );
+		*(unsigned int *)m_pCurrNormal = normalData | tangentData;
+#ifndef NDEBUG
+		m_bWrittenNormal = true;
+		m_bWrittenUserData = true;
+#endif
+		return;
+	}
+#endif
+	CompressedNormal3fv<T>( pNormal );
+	CompressedUserData<T>( pTangent );
+}
+
 template <VertexCompressionType_t T> inline void CVertexBuilder::CompressedUserData( const float* pData )
 {
 	Assert( T == m_CompressionType );
@@ -2972,6 +3004,8 @@ public:
 	void UserData( const float *pData );
 	// Generic per-vertex data (templatized for code which needs to support compressed vertices)
 	template <VertexCompressionType_t T> void CompressedUserData( const float* pData );
+	// SourceSpeedrunMod: normal + tangent in one write (no read-back from write-combined VB memory).
+	template <VertexCompressionType_t T> void CompressedNormalAndTangent( const float *pNormal, const float *pTangent );
 
 	// Used to define the indices (only used if you aren't using primitives)
 	void Index( unsigned short index );
@@ -3789,6 +3823,11 @@ FORCEINLINE void CMeshBuilder::BoneMatrix( int nIndex, int nMatrixIdx )
 FORCEINLINE void CMeshBuilder::UserData( const float* pData )
 {
 	m_VertexBuilder.UserData( pData );
+}
+
+template <VertexCompressionType_t T> FORCEINLINE void CMeshBuilder::CompressedNormalAndTangent( const float *pNormal, const float *pTangent )
+{
+	m_VertexBuilder.CompressedNormalAndTangent<T>( pNormal, pTangent );
 }
 
 template <VertexCompressionType_t T> FORCEINLINE void CMeshBuilder::CompressedUserData( const float* pData )

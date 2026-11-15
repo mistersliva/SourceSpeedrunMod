@@ -4876,7 +4876,7 @@ void CBaseEntity::PrecacheModelComponents( int nModelIndex )
 	{
 		// Check keyvalues for auto-emitting particles
 		KeyValuesAD pModelKeyValues("");
-		if ( pModelKeyValues->LoadFromBuffer( modelinfo->GetModelName( pModel ), modelinfo->GetModelKeyValueText( pModel ) ) )
+		if ( UTIL_LoadModelKeyValues( pModelKeyValues, pModel ) )
 		{
 			KeyValues *pParticleEffects = pModelKeyValues->FindKey("Particles");
 			if ( pParticleEffects )

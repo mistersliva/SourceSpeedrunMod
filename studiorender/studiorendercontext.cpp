@@ -525,7 +525,11 @@ template <VertexCompressionType_t T> bool CStudioRenderContext::R_AddVertexToMes
 	// FIXME: if this ever becomes perf-critical... these writes are not in memory-ascending order,
 	//        which hurts since VBs are in write-combined memory (See WriteCombineOrdering_t)
 	meshBuilder.Position3fv( vert.m_vecPosition.Base() );
-	meshBuilder.CompressedNormal3fv<T>( vert.m_vecNormal.Base() );
+	// SourceSpeedrunMod: normal and tangent share one compressed word; write it once.
+	if ( vertData->HasTangentData() )
+		meshBuilder.CompressedNormalAndTangent<T>( vert.m_vecNormal.Base(), (*vertData->TangentS( idx )).Base() );
+	else
+		meshBuilder.CompressedNormal3fv<T>( vert.m_vecNormal.Base() );
 	/*
 	if( vert.m_vecNormal.Length() < .9f || vert.m_vecNormal.Length() > 1.1f )
 	{
@@ -593,8 +597,7 @@ template <VertexCompressionType_t T> bool CStudioRenderContext::R_AddVertexToMes
 		}
 		*/
 
-		// send down tangent S as a 4D userdata vect.
-		meshBuilder.CompressedUserData<T>( (*vertData->TangentS( idx )).Base() );
+		// tangent S was written together with the normal above
 	}
 
 	// Just in case we get hooked to a material that wants per-vertex color

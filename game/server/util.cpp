@@ -3233,6 +3233,103 @@ void CC_CollisionTest( const CCommand &args )
 }
 static ConCommand collision_test("collision_test", CC_CollisionTest, "Tests collision system", FCVAR_CHEAT );
 
+//-----------------------------------------------------------------------------
+// SourceSpeedrunMod: parsed model keyvalues cache.
+//
+// Props, ragdolls, vehicles and NPCs parse their model's keyvalues text
+// ("prop_data", "physgun_interactions", "Particles", ...) every time an entity
+// spawns or is restored: ~1000 parses per save load on the coast maps, of the
+// same few hundred texts. Each model's text is parsed once and later callers
+// get a copy of the parsed tree.
+//-----------------------------------------------------------------------------
+static ConVar sv_model_keyvalues_cache( "sv_model_keyvalues_cache", "1", FCVAR_ARCHIVE,
+	"Parse each model's keyvalues text once and reuse it (faster loads)." );
 
+namespace
+{
+	struct ModelKvEntry_t
+	{
+		unsigned	hash = 0;
+		int			len = 0;
+		KeyValues	*pTree = nullptr;	// nullptr: the text did not parse
+	};
 
+	CUtlDict< ModelKvEntry_t, int > s_ModelKvCache;
+	double s_flModelKvSeconds = 0;
+	int s_nModelKvCalls = 0;
+	int s_nModelKvHits = 0;
 
+	unsigned HashModelKvText( const char *p, int &len )
+	{
+		unsigned h = 2166136261u;
+		len = 0;
+		for ( ; p[len]; ++len )
+			h = ( h ^ static_cast<unsigned char>( p[len] ) ) * 16777619u;
+		return h;
+	}
+}
+
+bool UTIL_LoadModelKeyValues( KeyValues *pDest, const model_t *pModel )
+{
+	const double start = Plat_FloatTime();
+	const char *pName = modelinfo->GetModelName( pModel );
+	const char *pText = modelinfo->GetModelKeyValueText( pModel );
+	++s_nModelKvCalls;
+
+	if ( !sv_model_keyvalues_cache.GetBool() || !pName || !pText || !pText[0] )
+	{
+		const bool ok = pDest->LoadFromBuffer( pName, pText );
+		s_flModelKvSeconds += Plat_FloatTime() - start;
+		return ok;
+	}
+
+	int len = 0;
+	const unsigned hash = HashModelKvText( pText, len );
+	int idx = s_ModelKvCache.Find( pName );
+	if ( idx != s_ModelKvCache.InvalidIndex() &&
+		 ( s_ModelKvCache[idx].hash != hash || s_ModelKvCache[idx].len != len ) )
+	{
+		if ( s_ModelKvCache[idx].pTree )
+			s_ModelKvCache[idx].pTree->deleteThis();
+		s_ModelKvCache.RemoveAt( idx );
+		idx = s_ModelKvCache.InvalidIndex();
+	}
+
+	if ( idx == s_ModelKvCache.InvalidIndex() )
+	{
+		ModelKvEntry_t entry;
+		entry.hash = hash;
+		entry.len = len;
+		KeyValues *pTree = new KeyValues( "" );
+		// Only plain single-root texts are cached; anything else is parsed every time.
+		if ( pTree->LoadFromBuffer( pName, pText ) && !pTree->GetNextKey() )
+		{
+			entry.pTree = pTree;
+		}
+		else
+		{
+			pTree->deleteThis();
+			s_flModelKvSeconds += Plat_FloatTime() - start;
+			return pDest->LoadFromBuffer( pName, pText );
+		}
+		idx = s_ModelKvCache.Insert( pName, entry );
+	}
+	else
+	{
+		++s_nModelKvHits;
+	}
+
+	const ModelKvEntry_t &entry = s_ModelKvCache[idx];
+	pDest->SetName( entry.pTree->GetName() );
+	entry.pTree->CopySubkeys( pDest );
+	s_flModelKvSeconds += Plat_FloatTime() - start;
+	return true;
+}
+
+CON_COMMAND( sv_model_keyvalues_stats, "Print and reset model keyvalues parse statistics." )
+{
+	Msg( "model keyvalues: %d calls, %d cached, %.1f ms, %d models in cache\n",
+		s_nModelKvCalls, s_nModelKvHits, s_flModelKvSeconds * 1000.0, s_ModelKvCache.Count() );
+	s_nModelKvCalls = s_nModelKvHits = 0;
+	s_flModelKvSeconds = 0;
+}

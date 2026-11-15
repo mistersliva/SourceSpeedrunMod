@@ -359,6 +359,10 @@ bool		UTIL_TeamsMatch( const char *pTeamName1, const char *pTeamName2 );
 void		UTIL_SnapDirectionToAxis( Vector &direction, float epsilon = 0.002f );
 
 //Set the entity to point at the target specified
+// SourceSpeedrunMod: parses pModel's keyvalues text into pDest, reusing earlier parses.
+class KeyValues;
+struct model_t;
+bool UTIL_LoadModelKeyValues( KeyValues *pDest, const model_t *pModel );
 bool UTIL_PointAtEntity( CBaseEntity *pEnt, CBaseEntity *pTarget );
 void UTIL_PointAtNamedEntity( CBaseEntity *pEnt, string_t strTarget );
 

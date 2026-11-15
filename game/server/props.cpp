@@ -325,7 +325,7 @@ void CBaseProp::CalculateBlockLOS( void )
 int CBaseProp::ParsePropData( void )
 {
 	KeyValuesAD modelKeyValues("");
-	if ( !modelKeyValues->LoadFromBuffer( modelinfo->GetModelName( GetModel() ), modelinfo->GetModelKeyValueText( GetModel() ) ) )
+	if ( !UTIL_LoadModelKeyValues( modelKeyValues, GetModel() ) )
 	{
 		return PARSE_FAILED_NO_DATA;
 	}
@@ -2032,7 +2032,7 @@ void CDynamicProp::CreateBoneFollowers()
 		return;
 
 	KeyValuesAD modelKeyValues("");
-	if ( modelKeyValues->LoadFromBuffer( modelinfo->GetModelName( GetModel() ), modelinfo->GetModelKeyValueText( GetModel() ) ) )
+	if ( UTIL_LoadModelKeyValues( modelKeyValues, GetModel() ) )
 	{
 		// Do we have a bone follower section?
 		KeyValues *pkvBoneFollowers = modelKeyValues->FindKey("bone_followers");
@@ -2820,7 +2820,7 @@ void CPhysicsProp::OnPhysGunDrop( CBasePlayer *pPhysGunUser, PhysGunDrop_t Reaso
 bool CPhysicsProp::GetPropDataAngles( const char *pKeyName, QAngle &vecAngles )
 {
 	KeyValuesAD modelKeyValues("");
-	if ( modelKeyValues->LoadFromBuffer( modelinfo->GetModelName( GetModel() ), modelinfo->GetModelKeyValueText( GetModel() ) ) )
+	if ( UTIL_LoadModelKeyValues( modelKeyValues, GetModel() ) )
 	{
 		KeyValues *pkvPropData = modelKeyValues->FindKey( "physgun_interactions" );
 		if ( pkvPropData )
@@ -2843,7 +2843,7 @@ bool CPhysicsProp::GetPropDataAngles( const char *pKeyName, QAngle &vecAngles )
 float CPhysicsProp::GetCarryDistanceOffset( void )
 {
 	KeyValuesAD modelKeyValues("");
-	if ( modelKeyValues->LoadFromBuffer( modelinfo->GetModelName( GetModel() ), modelinfo->GetModelKeyValueText( GetModel() ) ) )
+	if ( UTIL_LoadModelKeyValues( modelKeyValues, GetModel() ) )
 	{
 		KeyValues *pkvPropData = modelKeyValues->FindKey( "physgun_interactions" );
 		if ( pkvPropData )
@@ -3748,7 +3748,7 @@ void CBasePropDoor::CalcDoorSounds()
 		// Otherwise, use the sounds specified by the model keyvalues. These are looked up
 		// based on skin and hardware.
 		KeyValuesAD modelKeyValues("");
-		if ( modelKeyValues->LoadFromBuffer( modelinfo->GetModelName( GetModel() ), modelinfo->GetModelKeyValueText( GetModel() ) ) )
+		if ( UTIL_LoadModelKeyValues( modelKeyValues, GetModel() ) )
 		{
 			KeyValues *pkvDoorSounds = modelKeyValues->FindKey("door_options");
 			if ( pkvDoorSounds )
