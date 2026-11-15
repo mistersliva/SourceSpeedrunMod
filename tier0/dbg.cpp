@@ -1241,15 +1241,14 @@ void COM_TimestampedLog( PRINTF_FORMAT_STRING char const *fmt, ... )
 				is_log_file_reset = true;
 			}
 
-			auto [file, rc] = s1::posix::posix_file_stream_factory::open( kLogFileName, "at+" );
-			if ( !rc )
+			// SourceSpeedrunMod: keep the log open. Reopening it for every line
+			// cost ~20 ms each (antivirus scans every open), which made the
+			// timings meaningless.
+			static FILE *s_pLogFile = fopen( kLogFileName, "at" );
+			if ( s_pLogFile )
 			{
-				size_t size;
-				std::tie(size, rc) =
-					file.print( "[%8.4f | %8.4f]:  %s\n", now_stamp, now_stamp - last_time_stamp, message );
-
-				// dimhotepus: Was "if (!rc)", i.e. warned on every *successful* write.
-				bWriteFailed = static_cast<bool>( rc );
+				bWriteFailed = fprintf( s_pLogFile, "[%8.4f | %8.4f]:  %s\n", now_stamp, now_stamp - last_time_stamp, message ) < 0;
+				fflush( s_pLogFile );
 			}
 			else
 			{

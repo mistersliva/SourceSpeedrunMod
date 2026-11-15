@@ -14,6 +14,10 @@
 #include "tier0/fasttimer.h"
 #include "vphysics_interface.h"
 #include "vphysics/virtualmesh.h"
+#include "tier1/convar.h"
+#include "tier1/utlbuffer.h"
+#include "filesystem.h"
+#include "filesystem_engine.h"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -357,9 +361,178 @@ int CM_SurfacepropsForDisp( intp index )
 	return g_pDispCollTrees[index].GetSurfaceProps(0);
 }
 
+// SourceSpeedrunMod: HL2 maps have no LUMP_PHYSDISP, so vphysics builds a convex
+// hull for every displacement on every load (~140 ms on the coast maps). The
+// result only depends on the map's geometry, so the collision models are kept
+// across loads of the same map (saveloads, deaths, save deletion) and reused when
+// the map name, displacement count and every displacement's bounds match.
+static ConVar cm_keep_disp_collision( "cm_keep_disp_collision", "1", FCVAR_ARCHIVE,
+	"Reuse displacement physics collision when the same map is loaded again." );
+static char s_szKeptTerrainMap[MAX_PATH];
+static unsigned s_nKeptTerrainHash;
+static bool s_bTerrainKept;
+
+static unsigned DispTerrainHash()
+{
+	unsigned h = 2166136261u;
+	auto mix = [&h]( const void *p, size_t n ) {
+		const auto *c = static_cast<const unsigned char *>( p );
+		for ( size_t i = 0; i < n; ++i )
+			h = ( h ^ c[i] ) * 16777619u;
+	};
+	mix( &g_DispCollTreeCount, sizeof( g_DispCollTreeCount ) );
+	for ( intp i = 0; i < g_DispCollTreeCount; ++i )
+	{
+		const alignedbbox_t &b = g_pDispBounds[i];
+		const float v[6] = { b.mins.x, b.mins.y, b.mins.z, b.maxs.x, b.maxs.y, b.maxs.z };
+		mix( v, sizeof( v ) );
+		mix( &b.dispContents, sizeof( b.dispContents ) );
+		const int flags = g_pDispCollTrees[i].CheckFlags( CCoreDispInfo::SURF_NOPHYSICS_COLL ) ? 1 : 0;
+		mix( &flags, sizeof( flags ) );
+	}
+	return h;
+}
+
+static void DestroyTerrainList()
+{
+	for ( intp i = g_TerrainList.Count()-1; i>=0; --i )
+	{
+		physcollision->DestroyCollide( g_TerrainList[i] );
+	}
+	g_TerrainList.Purge();
+	s_bTerrainKept = false;
+}
+
+// SourceSpeedrunMod: the hulls built for a map are also written to disk in the
+// LUMP_PHYSDISP format (hl2/cache/ssm/<map>.physdisp). Later loads, also in new
+// sessions, feed that to the engine's standard lump path instead of building them.
+static ConVar cm_disp_hull_cache( "cm_disp_hull_cache", "1", FCVAR_ARCHIVE,
+	"Store displacement collision hulls on disk so a map's first load skips building them." );
+
+struct DispHullCacheHeader_t
+{
+	char		magic[4];
+	int			version;
+	unsigned	hash;
+	int			count;
+	int			lumpSize;
+};
+
+static CUtlBuffer s_DiskHullLump;
+static char s_szDiskHullMap[MAX_PATH];
+static unsigned s_nDiskHullHash;
+static bool s_bKeptLumpMode;
+
+static void DispHullCachePath( const char *pMap, char *pOut, int nOut )
+{
+	char base[MAX_PATH];
+	V_FileBase( pMap, base, sizeof( base ) );
+	V_snprintf( pOut, nOut, "cache/ssm/%s.physdisp", base );
+}
+
+static bool LoadDiskHulls( const char *pMap, unsigned hash )
+{
+	if ( s_DiskHullLump.TellPut() > 0 && s_nDiskHullHash == hash && V_streq( s_szDiskHullMap, pMap ) )
+		return true;
+
+	s_DiskHullLump.Purge();
+	s_szDiskHullMap[0] = 0;
+
+	char path[MAX_PATH];
+	DispHullCachePath( pMap, path, sizeof( path ) );
+	CUtlBuffer file;
+	if ( !g_pFileSystem->ReadFile( path, "DEFAULT_WRITE_PATH", file ) )
+		return false;
+
+	DispHullCacheHeader_t h;
+	if ( file.TellPut() < static_cast<int>( sizeof( h ) ) )
+		return false;
+	memcpy( &h, file.Base(), sizeof( h ) );
+	if ( memcmp( h.magic, "SSMH", 4 ) || h.version != 1 || h.hash != hash || h.count != g_DispCollTreeCount ||
+		 h.lumpSize <= 0 || static_cast<intp>( sizeof( h ) ) + h.lumpSize != file.TellPut() )
+		return false;
+
+	s_DiskHullLump.Put( static_cast<const char *>( file.Base() ) + sizeof( h ), h.lumpSize );
+	V_strcpy_safe( s_szDiskHullMap, pMap );
+	s_nDiskHullHash = hash;
+	return true;
+}
+
+static void SaveDiskHulls( const char *pMap, unsigned hash )
+{
+	if ( g_DispCollTreeCount <= 0 || g_DispCollTreeCount >= 0xFFFF )
+		return;
+
+	CUtlVector<unsigned short> sizes;
+	CUtlBuffer data;
+	for ( intp i = 0; i < g_DispCollTreeCount; ++i )
+	{
+		CPhysCollide *pCollide = g_TerrainList[i];
+		const size_t size = pCollide ? physcollision->CollideSize( pCollide ) : 0;
+		if ( !size )
+		{
+			sizes.AddToTail( 0xFFFF );	// no hull: same as a stock lump entry
+			continue;
+		}
+		if ( size >= 0xFFFF )
+			return;	// does not fit the lump format; keep building at load
+		sizes.AddToTail( static_cast<unsigned short>( size ) );
+		const intp at = data.TellPut();
+		data.EnsureCapacity( at + static_cast<intp>( size ) );
+		data.SeekPut( CUtlBuffer::SEEK_HEAD, at + static_cast<intp>( size ) );
+		if ( physcollision->CollideWrite( static_cast<char *>( data.Base() ) + at, pCollide ) != size )
+			return;
+	}
+
+	CUtlBuffer out;
+	DispHullCacheHeader_t h;
+	memcpy( h.magic, "SSMH", 4 );
+	h.version = 1;
+	h.hash = hash;
+	h.count = g_DispCollTreeCount;
+	const unsigned short count = static_cast<unsigned short>( g_DispCollTreeCount );
+	h.lumpSize = static_cast<int>( sizeof( count ) + sizes.Count() * sizeof( unsigned short ) + data.TellPut() );
+	out.Put( &h, sizeof( h ) );
+	out.Put( &count, sizeof( count ) );
+	out.Put( sizes.Base(), sizes.Count() * sizeof( unsigned short ) );
+	out.Put( data.Base(), data.TellPut() );
+
+	char path[MAX_PATH];
+	DispHullCachePath( pMap, path, sizeof( path ) );
+	g_pFileSystem->CreateDirHierarchy( "cache/ssm", "DEFAULT_WRITE_PATH" );
+	g_pFileSystem->WriteFile( path, "DEFAULT_WRITE_PATH", out );
+}
+
 void CM_CreateDispPhysCollide( dphysdisp_t *pDispLump, int dispLumpSize )
 {
+	const char *pMapName = GetCollisionBSPData()->map_name;
+	const unsigned hash = DispTerrainHash();
+
+	bool bFromDisk = false;
+	if ( dispLumpSize <= 0 && cm_disp_hull_cache.GetBool() && LoadDiskHulls( pMapName, hash ) )
+	{
+		pDispLump = reinterpret_cast<dphysdisp_t *>( s_DiskHullLump.Base() );
+		dispLumpSize = s_DiskHullLump.TellPut();
+		bFromDisk = true;
+	}
+	const bool bLumpMode = dispLumpSize > 0;
+
 	g_VirtualTerrain.LevelInit(pDispLump, dispLumpSize);
+
+	if ( s_bTerrainKept )
+	{
+		if ( cm_keep_disp_collision.GetBool() && g_TerrainList.Count() == g_DispCollTreeCount &&
+			 hash == s_nKeptTerrainHash && s_bKeptLumpMode == bLumpMode && V_streq( pMapName, s_szKeptTerrainMap ) )
+		{
+			s_bTerrainKept = false;
+			return;
+		}
+		DestroyTerrainList();
+	}
+	V_strcpy_safe( s_szKeptTerrainMap, pMapName );
+	s_nKeptTerrainHash = hash;
+	s_bKeptLumpMode = bLumpMode;
+
 	g_TerrainList.SetCount( g_DispCollTreeCount );
 	for ( intp i = 0; i < g_DispCollTreeCount; i++ )
 	{
@@ -373,21 +546,28 @@ void CM_CreateDispPhysCollide( dphysdisp_t *pDispLump, int dispLumpSize )
 		virtualmeshparams_t params;
 		params.pMeshEventHandler = &g_VirtualTerrain;
 		params.userData = (void *)i;
-		params.buildOuterHull = dispLumpSize > 0 ? false : true;
+		params.buildOuterHull = bLumpMode ? false : true;
 
 		g_TerrainList[i] = physcollision->CreateVirtualMesh( params );
 	}
+
+	if ( !bLumpMode && !bFromDisk && cm_disp_hull_cache.GetBool() )
+		SaveDiskHulls( pMapName, hash );
 }
 
 // End of level, free the collision models
 void CM_DestroyDispPhysCollide()
 {
 	g_VirtualTerrain.LevelShutdown();
-	for ( intp i = g_TerrainList.Count()-1; i>=0; --i )
+	// Keep the models for a reload of the same map (see CM_CreateDispPhysCollide).
+	// They only call back into g_VirtualTerrain / the trees while in use, and
+	// nothing uses them between levels.
+	if ( cm_keep_disp_collision.GetBool() && g_TerrainList.Count() > 0 )
 	{
-		physcollision->DestroyCollide( g_TerrainList[i] );
+		s_bTerrainKept = true;
+		return;
 	}
-	g_TerrainList.Purge();
+	DestroyTerrainList();
 }
 
 //-----------------------------------------------------------------------------

@@ -203,26 +203,37 @@ public:
 		}
 
 		// write the list of files to the save file
+		// SourceSpeedrunMod: build the whole directory in memory and append it
+		// with one write. Appending name, size and contents of every level file
+		// as separate async operations reopened the save file nine times per
+		// save (~35 ms with on-access antivirus scanning each close).
+		CUtlBuffer dir;
 		char szName[MAX_PATH];
 		for ( intp i = 0; i < list.Count(); i++ )
 		{
 			Q_snprintf( szName, sizeof( szName ), "%s/%s", saverestore->GetSaveDir(), list[i].szFileName );
 			Q_FixSlashes( szName );
 
+			CUtlBuffer contents;
 			// dimhotepus: Correctly check file size.
-			unsigned fileSize = g_pFileSystem->Size( szName, "MOD" );
-			if ( fileSize )
-			{
-				Assert( sizeof(list[i].szFileName) == MAX_PATH );
+			if ( !g_pFileSystem->ReadFile( szName, "MOD", contents ) || contents.TellPut() <= 0 )
+				continue;
 
-				SaveMsg( "DirectoryCopy: AsyncAppend %s, %s\n", szName, pDestFileName );
-				g_pFileSystem->AsyncAppend( pDestFileName, memcpy( new char[MAX_PATH], list[i].szFileName, MAX_PATH), MAX_PATH, true );		// Filename can only be as long as a map name + extension
-				// dimhotepus: ASAN catch, AsyncWrite will delete[] it. Also expect char[].
-				char *sizeAsString = new char[sizeof(fileSize)];
-				memcpy( sizeAsString, &fileSize, sizeof(fileSize) );
-				g_pFileSystem->AsyncAppend( pDestFileName, sizeAsString, sizeof(fileSize), true );
-				g_pFileSystem->AsyncAppendFile( pDestFileName, szName );
-			}
+			const unsigned fileSize = static_cast<unsigned>( contents.TellPut() );
+			Assert( sizeof(list[i].szFileName) == MAX_PATH );
+			SaveMsg( "DirectoryCopy: append %s (%u), %s\n", szName, fileSize, pDestFileName );
+			// Filename can only be as long as a map name + extension
+			dir.Put( list[i].szFileName, MAX_PATH );
+			dir.Put( &fileSize, sizeof( fileSize ) );
+			dir.Put( contents.Base(), fileSize );
+		}
+
+		if ( dir.TellPut() > 0 )
+		{
+			// AsyncAppend takes ownership and delete[]s the buffer.
+			char *pData = new char[ dir.TellPut() ];
+			memcpy( pData, dir.Base(), dir.TellPut() );
+			g_pFileSystem->AsyncAppend( pDestFileName, pData, dir.TellPut(), true );
 		}
 	}
 

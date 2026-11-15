@@ -1795,6 +1795,8 @@ bool CStaticPropMgr::PropHasBakedLightingDisabled( IHandleEntity *pHandleEntity 
 //-----------------------------------------------------------------------------
 // Compute static lighting
 //-----------------------------------------------------------------------------
+extern void PropVertexLighting_SaveCache();
+extern void PropAmbientLighting_SaveCache();
 void CStaticPropMgr::PrecacheLighting()
 {
 	COM_TimestampedLog( "CStaticPropMgr::PrecacheLighting - start");
@@ -1807,6 +1809,10 @@ void CStaticPropMgr::PrecacheLighting()
 			continue;
 		m_StaticProps[i].PrecacheLighting();
 	}
+
+	// SourceSpeedrunMod: keep this map's computed prop lighting for later sessions.
+	PropVertexLighting_SaveCache();
+	PropAmbientLighting_SaveCache();
 
 	COM_TimestampedLog( "CStaticPropMgr::PrecacheLighting - end");
 }

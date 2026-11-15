@@ -1136,11 +1136,17 @@ void R_CheckForLightingConfigChanges()
 	UpdateMaterialSystemConfig();
 	if( MaterialConfigLightingChanged() || g_RebuildLightmaps )
 	{
+		extern bool g_bLightmapRebuildIsLevelStart;
+		// SourceSpeedrunMod: static props were lit while loading; only relight
+		// them when the lighting configuration really changed.
+		const bool bRelightProps = MaterialConfigLightingChanged() || !g_bLightmapRebuildIsLevelStart;
+		g_bLightmapRebuildIsLevelStart = false;
 		ClearMaterialConfigLightingChanged();
 		ConMsg( "Redownloading all lightmaps\n" );
 		BuildGammaTable( GAMMA, TEXGAMMA, 0.0f, OVERBRIGHT );
 		R_RedownloadAllLightmaps();
-		StaticPropMgr()->RecomputeStaticLighting();
+		if ( bRelightProps )
+			StaticPropMgr()->RecomputeStaticLighting();
 	}
 }
 

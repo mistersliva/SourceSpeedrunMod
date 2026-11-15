@@ -1323,6 +1323,7 @@ void CollisionBSPData_LoadDispInfo( CCollisionBSPData *pBSPData )
 	CMapLoadHelper lhDispPhys( LUMP_PHYSDISP );
 	auto *pDispPhys = lhDispPhys.LumpBase<dphysdisp_t>();
 
+	COM_TimestampedLog( "  CollisionBSPData_LoadDispInfo: trees built" );
 	// create the vphysics collision models for each displacement
 	CM_CreateDispPhysCollide( pDispPhys, lhDispPhys.LumpSize() );
 }

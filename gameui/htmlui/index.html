@@ -244,6 +244,8 @@
             <select data-cvar="mat_hdr_level"><option value="0" data-loc="#GameUI_hdr_level0">None</option><option value="1" data-loc="#GameUI_hdr_level1">Bloom</option><option value="2" data-loc="#GameUI_hdr_level2">Full</option></select></label>
           <label class="field"><span data-loc="#GameUI_MotionBlur">Motion blur</span><span class="switch"><input type="checkbox" data-cvar="mat_motion_blur_enabled"><i></i></span></label>
           <label class="field"><span data-loc="#GameUI_ColorCorrection">Color correction</span><span class="switch"><input type="checkbox" data-cvar="mat_colorcorrection"><i></i></span></label>
+          <label class="field" title="Off removes rare light streaks in the sky, at the cost of some FPS"><span>Multicore rendering</span>
+            <select data-cvar="mat_queue_mode"><option value="-1">Auto</option><option value="2">On</option><option value="0">Off</option></select></label>
         </div>
 
         <!-- Audio -->

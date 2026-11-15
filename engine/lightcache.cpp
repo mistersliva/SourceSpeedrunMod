@@ -36,6 +36,11 @@
 #include "tier0/vprof.h"
 #include "tier1/mempool.h"
 #include "tier2/tier2.h"
+#include "tier1/utlbuffer.h"
+#include <deque>
+#include <unordered_set>
+#include <string>
+#include <unordered_map>
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -2305,6 +2310,209 @@ void InvalidateStaticLightingCache(void)
 }
 
 //-----------------------------------------------------------------------------
+// SourceSpeedrunMod: static prop lighting cache.
+// Computing a static prop's lighting traces against every world light and
+// samples the ambient cube (~75 ms per load on the coast maps). The result only
+// depends on the map and the prop's lighting origin, so it is kept per map and
+// restored when the same map is loaded again. World lights are stored as indices:
+// the light array is reallocated on every load.
+//-----------------------------------------------------------------------------
+static ConVar r_proplighting_cache( "r_proplighting_cache", "1", FCVAR_ARCHIVE,
+	"Reuse computed static prop lighting when a map is loaded again." );
+
+namespace
+{
+	struct CachedPropLighting_t
+	{
+		Vector	boxcolor[6];
+		int		numlights;
+		int		lights[MAXLOCALLIGHTS];
+		float	illum[MAXLOCALLIGHTS];
+		bool	hasSkylight;
+	};
+
+	class CStaticPropLightingCache
+	{
+	public:
+		using MapCache = std::unordered_map< std::string, CachedPropLighting_t >;
+
+		MapCache *ForMap( const char *map, bool bCreate )
+		{
+			auto it = m_Maps.find( map );
+			if ( it != m_Maps.end() )
+				return &it->second;
+
+			// Not in memory yet: try the copy saved by an earlier session.
+			MapCache loaded;
+			const bool bLoaded = Load( map, loaded );
+			if ( !bLoaded && !bCreate )
+				return nullptr;
+
+			m_Order.emplace_back( map );
+			while ( m_Order.size() > 24 )
+			{
+				m_Maps.erase( m_Order.front() );
+				m_Order.pop_front();
+			}
+			auto &slot = m_Maps[map];
+			slot = std::move( loaded );
+			return &slot;
+		}
+
+		void MarkDirty( const char *map ) { m_Dirty.insert( map ); }
+
+		// Writes the maps that got new entries to hl2/cache/ssm/<map>.propambient.
+		void SaveDirty()
+		{
+			for ( const std::string &map : m_Dirty )
+			{
+				auto it = m_Maps.find( map );
+				if ( it == m_Maps.end() )
+					continue;
+				CUtlBuffer buf;
+				const unsigned magic = kMagic, version = kVersion, entrySize = sizeof( CachedPropLighting_t );
+				const unsigned mapSize = g_pFileSystem->Size( map.c_str(), "GAME" );
+				const unsigned count = static_cast<unsigned>( it->second.size() );
+				buf.Put( &magic, sizeof( magic ) );
+				buf.Put( &version, sizeof( version ) );
+				buf.Put( &entrySize, sizeof( entrySize ) );
+				buf.Put( &mapSize, sizeof( mapSize ) );
+				buf.Put( &count, sizeof( count ) );
+				for ( const auto &entry : it->second )
+				{
+					const unsigned keyLen = static_cast<unsigned>( entry.first.size() );
+					buf.Put( &keyLen, sizeof( keyLen ) );
+					buf.Put( entry.first.data(), keyLen );
+					buf.Put( &entry.second, sizeof( entry.second ) );
+				}
+				char path[MAX_PATH];
+				CachePath( map.c_str(), path, sizeof( path ) );
+				g_pFileSystem->CreateDirHierarchy( "cache/ssm", "DEFAULT_WRITE_PATH" );
+				g_pFileSystem->WriteFile( path, "DEFAULT_WRITE_PATH", buf );
+			}
+			m_Dirty.clear();
+		}
+
+	private:
+		static constexpr unsigned kMagic = 0x41534D53;	// "SMSA"
+		static constexpr unsigned kVersion = 1;
+
+		static void CachePath( const char *map, char *pOut, int nOut )
+		{
+			char base[MAX_PATH];
+			V_FileBase( map, base, sizeof( base ) );
+			V_snprintf( pOut, nOut, "cache/ssm/%s.propambient", base );
+		}
+
+		static bool Load( const char *map, MapCache &out )
+		{
+			char path[MAX_PATH];
+			CachePath( map, path, sizeof( path ) );
+			CUtlBuffer buf;
+			if ( !g_pFileSystem->ReadFile( path, "DEFAULT_WRITE_PATH", buf ) )
+				return false;
+
+			unsigned magic = 0, version = 0, entrySize = 0, mapSize = 0, count = 0;
+			buf.Get( &magic, sizeof( magic ) );
+			buf.Get( &version, sizeof( version ) );
+			buf.Get( &entrySize, sizeof( entrySize ) );
+			buf.Get( &mapSize, sizeof( mapSize ) );
+			buf.Get( &count, sizeof( count ) );
+			if ( !buf.IsValid() || magic != kMagic || version != kVersion || entrySize != sizeof( CachedPropLighting_t ) ||
+				 mapSize != g_pFileSystem->Size( map, "GAME" ) )
+				return false;
+
+			for ( unsigned i = 0; i < count; ++i )
+			{
+				unsigned keyLen = 0;
+				buf.Get( &keyLen, sizeof( keyLen ) );
+				if ( !buf.IsValid() || keyLen > 1024 || static_cast<unsigned>( buf.GetBytesRemaining() ) < keyLen + sizeof( CachedPropLighting_t ) )
+					return false;
+				std::string key( static_cast<const char *>( buf.PeekGet() ), keyLen );
+				buf.SeekGet( CUtlBuffer::SEEK_CURRENT, keyLen );
+				CachedPropLighting_t entry;
+				buf.Get( &entry, sizeof( entry ) );
+				if ( entry.numlights < 0 || entry.numlights > MAXLOCALLIGHTS )
+					return false;
+				out.emplace( std::move( key ), entry );
+			}
+			return buf.IsValid();
+		}
+
+		std::unordered_map< std::string, MapCache > m_Maps;
+		std::deque< std::string > m_Order;
+		std::unordered_set< std::string > m_Dirty;
+	};
+
+	CStaticPropLightingCache g_StaticPropLightingCache;
+
+	bool PropLightingCacheKey( const PropLightcache_t *pcache, std::string &map, std::string &key )
+	{
+		if ( !r_proplighting_cache.GetBool() || !host_state.worldmodel || !host_state.worldbrush )
+			return false;
+		map = host_state.worldmodel->strName.String();
+		char buf[256];
+		const Vector &o = pcache->m_LightingOrigin;
+		V_sprintf_safe( buf, "%.3f %.3f %.3f|%d|%d|%d|%d|%d|%d|%d",
+			o.x, o.y, o.z, pcache->leaf, host_state.worldbrush->numworldlights,
+			(int)g_pMaterialSystemHardwareConfig->GetHDRType(), r_radiosity.GetInt(), r_worldlights.GetInt(),
+			r_ambientlightingonly.GetInt(), r_lightcache_zbuffercache.GetInt() );
+		key = buf;
+		return true;
+	}
+}
+
+static bool RestoreStaticPropLighting( PropLightcache_t *pcache )
+{
+	std::string map, key;
+	if ( !PropLightingCacheKey( pcache, map, key ) )
+		return false;
+	auto *pMap = g_StaticPropLightingCache.ForMap( map.c_str(), false );
+	if ( !pMap )
+		return false;
+	auto it = pMap->find( key );
+	if ( it == pMap->end() )
+		return false;
+	const CachedPropLighting_t &c = it->second;
+	for ( int i = 0; i < c.numlights; ++i )
+	{
+		if ( c.lights[i] < 0 || c.lights[i] >= host_state.worldbrush->numworldlights )
+			return false;
+	}
+	LightingState_t &state = pcache->m_StaticLightingState;
+	for ( int i = 0; i < 6; ++i )
+		state.r_boxcolor[i] = c.boxcolor[i];
+	state.numlights = c.numlights;
+	for ( int i = 0; i < c.numlights; ++i )
+	{
+		state.locallight[i] = &host_state.worldbrush->worldlights[c.lights[i]];
+		pcache->m_pIllum[i] = c.illum[i];
+	}
+	pcache->m_LightingStateHasSkylight = c.hasSkylight;
+	return true;
+}
+
+static void StoreStaticPropLighting( PropLightcache_t *pcache )
+{
+	std::string map, key;
+	if ( !PropLightingCacheKey( pcache, map, key ) )
+		return;
+	const LightingState_t &state = pcache->m_StaticLightingState;
+	CachedPropLighting_t c = {};
+	for ( int i = 0; i < 6; ++i )
+		c.boxcolor[i] = state.r_boxcolor[i];
+	c.numlights = state.numlights;
+	for ( int i = 0; i < state.numlights; ++i )
+	{
+		c.lights[i] = static_cast<int>( state.locallight[i] - host_state.worldbrush->worldlights );
+		c.illum[i] = pcache->m_pIllum[i];
+	}
+	c.hasSkylight = pcache->m_LightingStateHasSkylight;
+	( *g_StaticPropLightingCache.ForMap( map.c_str(), true ) )[key] = c;
+	g_StaticPropLightingCache.MarkDirty( map.c_str() );
+}
+
+//-----------------------------------------------------------------------------
 // Gets the lightcache entry for a static prop
 //-----------------------------------------------------------------------------
 LightingState_t *LightcacheGetStatic( LightCacheHandle_t cache, ITexture **pEnvCubemapTexture, unsigned int flags )
@@ -2359,7 +2567,11 @@ LightingState_t *LightcacheGetStatic( LightCacheHandle_t cache, ITexture **pEnvC
 		// want static lighting data
 		if ( bRecalcStaticLighting && !(pcache->m_LightingFlags & HACKLIGHTCACHEFLAGS_HASDONESTATICLIGHTING) )
 		{	
-			ComputeStaticLightingForCacheEntry( pcache, pcache->m_LightingOrigin, pcache->leaf, true );
+			if ( !RestoreStaticPropLighting( pcache ) )
+			{
+				ComputeStaticLightingForCacheEntry( pcache, pcache->m_LightingOrigin, pcache->leaf, true );
+				StoreStaticPropLighting( pcache );
+			}
 			pcache->m_LightingFlags |= HACKLIGHTCACHEFLAGS_HASDONESTATICLIGHTING;
 		}
 
@@ -3023,4 +3235,9 @@ void InitDLightGlobals( int nMapVersion )
 		// Since HL2 maps were compiled with this bsp version.
 		g_flMinLightingValue = 20.0f / 256.0f;
 	}
+}
+
+void PropAmbientLighting_SaveCache()
+{
+	g_StaticPropLightingCache.SaveDirty();
 }

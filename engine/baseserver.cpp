@@ -697,8 +697,9 @@ bool CBaseServer::ProcessConnectionlessPacket(netpacket_t * packet)
 					break;
 				}
 
-				// rate limit the connections
-				if ( !s_connectRateChecker.CheckIP( packet->from ) )
+				// rate limit the connections (SourceSpeedrunMod: not our own local
+				// client; every save load reconnects it, and fast saveloads hit the limit)
+				if ( !packet->from.IsLoopback() && !s_connectRateChecker.CheckIP( packet->from ) )
 					return false;
 
 				msg.ReadString( name );
@@ -2085,8 +2086,10 @@ void CBaseServer::Shutdown( void )
 		m_Clients.Remove( i );
 	}
 
-	// Let drop messages go out
-	Sys_Sleep( 100 );
+	// Let drop messages go out (SourceSpeedrunMod: only over a real network;
+	// a single-player server has nothing to wait for, and this ran on every load)
+	if ( GetMaxClients() > 1 )
+		Sys_Sleep( 100 );
 
 	// clear everything
 	Clear();

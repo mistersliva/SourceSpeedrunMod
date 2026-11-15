@@ -208,7 +208,10 @@ void R_LoadWorldGeometry( bool bDXChange )
 	Mod_MarkWaterSurfaces( host_state.worldmodel );
 
 	// make sure and rebuild lightmaps when the level gets started.
+	extern bool g_bLightmapRebuildIsLevelStart;
+	const bool bOtherRebuildPending = g_RebuildLightmaps && !g_bLightmapRebuildIsLevelStart;
 	GL_RebuildLightmaps();
+	g_bLightmapRebuildIsLevelStart = !bOtherRebuildPending;
 
 	if ( bDXChange )
 	{

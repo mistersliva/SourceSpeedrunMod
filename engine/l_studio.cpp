@@ -53,6 +53,11 @@
 #include "tier1/lzmaDecoder.h"
 #include "ipooledvballocator.h"
 #include "shaderapi/ishaderapi.h"
+#include <string>
+#include <unordered_map>
+#include <vector>
+#include <deque>
+#include <unordered_set>
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -3925,6 +3930,172 @@ bool CModelRender::LoadStaticPropColorData( IHandleEntity *pProp, DataCacheHandl
 }
 
 //-----------------------------------------------------------------------------
+// SourceSpeedrunMod: static prop vertex lighting cache.
+// HL2 maps have no baked prop lighting, so every load traces the lighting of
+// every vertex of every static prop again (~120 ms on the coast maps), with the
+// same result each time. Results are kept per map and reused when the same prop
+// (index, model, position, angles, HDR mode) is lit again.
+//-----------------------------------------------------------------------------
+static ConVar r_propvertexlighting_cache( "r_propvertexlighting_cache", "1", FCVAR_ARCHIVE,
+	"Reuse computed static prop vertex lighting when a map is loaded again." );
+
+namespace
+{
+	using PropVertexColors = std::vector< std::vector< color24 > >;	// per (bodypart, model)
+
+	class CPropLightingCache
+	{
+	public:
+		PropVertexColors *Find( const std::string &map, const std::string &key )
+		{
+			auto *pMap = ForMap( map, false );
+			if ( !pMap )
+				return nullptr;
+			auto it = pMap->find( key );
+			return it == pMap->end() ? nullptr : &it->second;
+		}
+
+		void Store( const std::string &map, const std::string &key, PropVertexColors &&colors )
+		{
+			( *ForMap( map, true ) )[key] = std::move( colors );
+			m_Dirty.insert( map );
+		}
+
+		// Writes the maps that got new entries to hl2/cache/ssm/<map>.proplight.
+		void SaveDirty()
+		{
+			for ( const std::string &map : m_Dirty )
+			{
+				auto it = m_Maps.find( map );
+				if ( it == m_Maps.end() )
+					continue;
+				CUtlBuffer buf;
+				const unsigned magic = kMagic, version = kVersion;
+				const unsigned count = static_cast<unsigned>( it->second.size() );
+				const unsigned mapSize = MapFileSize( map );
+				buf.Put( &magic, sizeof( magic ) );
+				buf.Put( &version, sizeof( version ) );
+				buf.Put( &mapSize, sizeof( mapSize ) );
+				buf.Put( &count, sizeof( count ) );
+				for ( const auto &entry : it->second )
+				{
+					const unsigned keyLen = static_cast<unsigned>( entry.first.size() );
+					buf.Put( &keyLen, sizeof( keyLen ) );
+					buf.Put( entry.first.data(), keyLen );
+					const unsigned subCount = static_cast<unsigned>( entry.second.size() );
+					buf.Put( &subCount, sizeof( subCount ) );
+					for ( const auto &sub : entry.second )
+					{
+						const unsigned verts = static_cast<unsigned>( sub.size() );
+						buf.Put( &verts, sizeof( verts ) );
+						buf.Put( sub.data(), verts * sizeof( color24 ) );
+					}
+				}
+				char path[MAX_PATH];
+				CachePath( map, path, sizeof( path ) );
+				g_pFileSystem->CreateDirHierarchy( "cache/ssm", "DEFAULT_WRITE_PATH" );
+				g_pFileSystem->WriteFile( path, "DEFAULT_WRITE_PATH", buf );
+			}
+			m_Dirty.clear();
+		}
+
+	private:
+		static constexpr size_t kMaxMaps = 24;
+		static constexpr unsigned kMagic = 0x56534D53;	// "SMSV"
+		static constexpr unsigned kVersion = 1;
+
+		static void CachePath( const std::string &map, char *pOut, int nOut )
+		{
+			char base[MAX_PATH];
+			V_FileBase( map.c_str(), base, sizeof( base ) );
+			V_snprintf( pOut, nOut, "cache/ssm/%s_hdr%d.proplight", base, (int)g_pMaterialSystemHardwareConfig->GetHDRType() );
+		}
+
+		static unsigned MapFileSize( const std::string &map )
+		{
+			return g_pFileSystem->Size( map.c_str(), "GAME" );
+		}
+
+		std::unordered_map< std::string, PropVertexColors > *ForMap( const std::string &map, bool bCreate )
+		{
+			auto it = m_Maps.find( map );
+			if ( it != m_Maps.end() )
+				return &it->second;
+
+			// Not in memory yet: try the copy saved by an earlier session.
+			std::unordered_map< std::string, PropVertexColors > loaded;
+			const bool bLoaded = Load( map, loaded );
+			if ( !bLoaded && !bCreate )
+				return nullptr;
+
+			m_Order.push_back( map );
+			while ( m_Order.size() > kMaxMaps )
+			{
+				m_Maps.erase( m_Order.front() );
+				m_Order.pop_front();
+			}
+			auto &slot = m_Maps[map];
+			slot = std::move( loaded );
+			return &slot;
+		}
+
+		bool Load( const std::string &map, std::unordered_map< std::string, PropVertexColors > &out )
+		{
+			char path[MAX_PATH];
+			CachePath( map, path, sizeof( path ) );
+			CUtlBuffer buf;
+			if ( !g_pFileSystem->ReadFile( path, "DEFAULT_WRITE_PATH", buf ) )
+				return false;
+
+			unsigned magic = 0, version = 0, mapSize = 0, count = 0;
+			buf.Get( &magic, sizeof( magic ) );
+			buf.Get( &version, sizeof( version ) );
+			buf.Get( &mapSize, sizeof( mapSize ) );
+			buf.Get( &count, sizeof( count ) );
+			if ( !buf.IsValid() || magic != kMagic || version != kVersion || mapSize != MapFileSize( map ) )
+				return false;
+
+			for ( unsigned i = 0; i < count; ++i )
+			{
+				unsigned keyLen = 0;
+				buf.Get( &keyLen, sizeof( keyLen ) );
+				if ( !buf.IsValid() || keyLen > 1024 || static_cast<unsigned>( buf.GetBytesRemaining() ) < keyLen )
+					return false;
+				std::string key( static_cast<const char *>( buf.PeekGet() ), keyLen );
+				buf.SeekGet( CUtlBuffer::SEEK_CURRENT, keyLen );
+				unsigned subCount = 0;
+				buf.Get( &subCount, sizeof( subCount ) );
+				if ( !buf.IsValid() || subCount > 4096 )
+					return false;
+				PropVertexColors colors( subCount );
+				for ( auto &sub : colors )
+				{
+					unsigned verts = 0;
+					buf.Get( &verts, sizeof( verts ) );
+					if ( !buf.IsValid() || static_cast<unsigned>( buf.GetBytesRemaining() ) < verts * sizeof( color24 ) )
+						return false;
+					sub.resize( verts );
+					buf.Get( sub.data(), verts * sizeof( color24 ) );
+				}
+				out.emplace( std::move( key ), std::move( colors ) );
+			}
+			return buf.IsValid();
+		}
+
+		std::unordered_map< std::string, std::unordered_map< std::string, PropVertexColors > > m_Maps;
+		std::deque< std::string > m_Order;
+		std::unordered_set< std::string > m_Dirty;
+	};
+
+	CPropLightingCache g_PropLightingCache;
+}
+
+void PropVertexLighting_SaveCache()
+{
+	g_PropLightingCache.SaveDirty();
+}
+
+//-----------------------------------------------------------------------------
 // Computes the static prop color data.
 // Data calculation may be delayed if data is disk based.
 // Returns FALSE if data not available or error. For retry polling pattern.
@@ -4046,6 +4217,28 @@ bool CModelRender::UpdateStaticPropColorData( IHandleEntity *pProp, ModelInstanc
 	// Sets the model transform state in g_pStudioRender
 	matrix3x4_t matrix;
 	AngleMatrix( inst.m_pRenderable->GetRenderAngles(), inst.m_pRenderable->GetRenderOrigin(), matrix );
+
+	// Reuse the lighting computed for this prop on an earlier load of the map.
+	std::string cacheMap, cacheKey;
+	PropVertexColors *pCachedColors = nullptr;
+	PropVertexColors newColors;
+	const bool bUseCache = !bDebugColor && r_propvertexlighting_cache.GetBool() &&
+		host_state.worldmodel && StaticPropMgr()->IsStaticProp( pProp );
+	if ( bUseCache )
+	{
+		const Vector &o = inst.m_pRenderable->GetRenderOrigin();
+		const QAngle &a = inst.m_pRenderable->GetRenderAngles();
+		char key[512];
+		V_sprintf_safe( key, "%d|%s|%.3f %.3f %.3f|%.3f %.3f %.3f|%d|%d|%d",
+			StaticPropMgr()->GetStaticPropIndex( pProp ), inst.m_pModel->strName.String(),
+			o.x, o.y, o.z, a.x, a.y, a.z,
+			(int)g_pMaterialSystemHardwareConfig->GetHDRType(), g_pMaterialSystemHardwareConfig->SupportsStaticPlusDynamicLighting() ? 1 : 0,
+			pStudioHdr->checksum );
+		cacheMap = host_state.worldmodel->strName.String();
+		cacheKey = key;
+		pCachedColors = g_PropLightingCache.Find( cacheMap, cacheKey );
+	}
+	size_t nCachedSubmodel = 0;
 	
 	// Get static lighting only!!  We'll add dynamic and lightstyles in in the vertex shader. . .
 	unsigned int lightCacheFlags = LIGHTCACHEFLAGS_STATIC;
@@ -4057,7 +4250,11 @@ bool CModelRender::UpdateStaticPropColorData( IHandleEntity *pProp, ModelInstanc
 	}
 
 	LightingState_t lightingState;
-	if ( (inst.m_nFlags & MODEL_INSTANCE_HAS_STATIC_LIGHTING) && inst.m_LightCacheHandle )
+	if ( pCachedColors )
+	{
+		// not needed: the vertex colors come from the cache
+	}
+	else if ( (inst.m_nFlags & MODEL_INSTANCE_HAS_STATIC_LIGHTING) && inst.m_LightCacheHandle )
 	{
 		lightingState = *(LightcacheGetStatic( inst.m_LightCacheHandle, NULL, lightCacheFlags ));
 	}
@@ -4098,10 +4295,23 @@ bool CModelRender::UpdateStaticPropColorData( IHandleEntity *pProp, ModelInstanc
 			// Make sure we've got enough space allocated
 			tmpLightingMem.EnsureCapacity( pModel->numvertices );
 
-			if ( !bDebugColor )
+			if ( pCachedColors )
+			{
+				if ( nCachedSubmodel >= pCachedColors->size() || (*pCachedColors)[nCachedSubmodel].size() != (size_t)pModel->numvertices )
+				{
+					// Should not happen (the key includes the model checksum); recompute next time.
+					pCachedColors = nullptr;
+					return false;
+				}
+				memcpy( tmpLightingMem.Base(), (*pCachedColors)[nCachedSubmodel].data(), pModel->numvertices * sizeof( color24 ) );
+				++nCachedSubmodel;
+			}
+			else if ( !bDebugColor )
 			{
 				// Compute lighting for each unique vertex in the model exactly once
 				ComputeModelVertexLightingOld( pModel, matrix, lightingState, tmpLightingMem.Base(), bUseConstDirLighting, flConstDirLightingAmount );
+				if ( bUseCache )
+					newColors.emplace_back( tmpLightingMem.Base(), tmpLightingMem.Base() + pModel->numvertices );
 			}
 			else
 			{
@@ -4159,6 +4369,9 @@ bool CModelRender::UpdateStaticPropColorData( IHandleEntity *pProp, ModelInstanc
 		}
 	}
 	
+	if ( bUseCache && !pCachedColors && !newColors.empty() )
+		g_PropLightingCache.Store( cacheMap, cacheKey, std::move( newColors ) );
+
 	pColorMeshData->m_bColorMeshValid = true;
 	pColorMeshData->m_bNeedsRetry = false;
 #endif

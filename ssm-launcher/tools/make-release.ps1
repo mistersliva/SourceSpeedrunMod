@@ -22,7 +22,7 @@ $stage = Join-Path $OutDir 'SourceSpeedrunMod'
 if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
 
 # --- Copy without player data and build leftovers.
-$excludeDirs = 'bin\x64\cef\cache', 'hl2\save', 'hl2\screenshots', 'hl2\splits', 'hl2\downloadlists', 'hl2\maps', 'hl2\sound', '.download' | ForEach-Object { Join-Path $GameDir $_ }
+$excludeDirs = 'bin\x64\cef\cache', 'hl2\save', 'hl2\cache', 'hl2\screenshots', 'hl2\splits', 'hl2\downloadlists', 'hl2\maps', 'hl2\sound', '.download' | ForEach-Object { Join-Path $GameDir $_ }
 $excludeFiles = '*.pdb', '*.log', '*.bak', '*.tmp', '*.ilk', '*.exp', '*.lib', 'config.cfg', 'autoexec.cfg', 'modelsounds.cache', 'voice_ban.dt', 'stats.txt', 'GameState.txt', 'ssm-version.txt', 'SSM-Launcher*.exe'
 robocopy $GameDir $stage /E /NFL /NDL /NJH /NJS /XD @excludeDirs /XF @excludeFiles | Out-Null
 if ($LASTEXITCODE -ge 8) { throw "robocopy failed ($LASTEXITCODE)" }

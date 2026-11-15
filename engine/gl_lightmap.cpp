@@ -1057,10 +1057,15 @@ void R_RedownloadAllLightmaps()
 // Purpose: flag the lightmaps as needing to be rebuilt (gamma change)
 //-----------------------------------------------------------------------------
 bool g_RebuildLightmaps = false;
+// SourceSpeedrunMod: true while the pending rebuild was requested only by the
+// level start. Static prop lighting was just computed during the load then, and
+// the first frame does not need to compute it a second time.
+bool g_bLightmapRebuildIsLevelStart = false;
 
 void GL_RebuildLightmaps( void )
 {
 	g_RebuildLightmaps = true;
+	g_bLightmapRebuildIsLevelStart = false;
 }
 
 
