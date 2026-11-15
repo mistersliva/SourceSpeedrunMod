@@ -47,6 +47,9 @@
 #include "lumpfiles.h"
 #include "tier2/fileutils.h"
 #include "UtlSortVector.h"
+#ifdef _WIN32
+#include "winlite.h"
+#endif
 #include "utlhashtable.h"
 #include "tier1/lzmaDecoder.h"
 #include "eiface.h"
@@ -86,6 +89,27 @@ extern ConVar r_lightcache_zbuffercache;
 static ConVar mod_dynamicunloadtime( "mod_dynamicunloadtime", "150", FCVAR_HIDDEN | FCVAR_DONTRECORD );
 static ConVar mod_dynamicunloadtextures( "mod_dynamicunloadtex", "1", FCVAR_HIDDEN | FCVAR_DONTRECORD );
 static ConVar mod_dynamicloadpause( "mod_dynamicloadpause", "0", FCVAR_CHEAT | FCVAR_HIDDEN | FCVAR_DONTRECORD );
+// SourceSpeedrunMod: keep studio models (and through them their materials and
+// textures) from earlier levels loaded, so going back to a map -- loading a save
+// on another map, dying and reloading -- does not read them from disk again.
+// The previous world (BSP) is still unloaded as usual.
+static ConVar mod_keep_unused_models( "mod_keep_unused_models", "1", FCVAR_ARCHIVE,
+	"Keep models from earlier levels in memory so level changes and save loads are faster." );
+
+// Kept only while the machine has memory to spare; on low free RAM the engine
+// goes back to unloading unused models and materials after each load.
+static bool KeepUnusedModels()
+{
+	if ( !mod_keep_unused_models.GetBool() )
+		return false;
+#ifdef _WIN32
+	MEMORYSTATUSEX status = {};
+	status.dwLength = sizeof( status );
+	if ( GlobalMemoryStatusEx( &status ) && status.ullAvailPhys < 1536ull * 1024 * 1024 )
+		return false;
+#endif
+	return true;
+}
 static ConVar mod_dynamicloadthrottle( "mod_dynamicloadthrottle", "0", FCVAR_CHEAT | FCVAR_HIDDEN | FCVAR_DONTRECORD );
 static ConVar mod_dynamicloadspew( "mod_dynamicloadspew", "0", FCVAR_HIDDEN | FCVAR_DONTRECORD );
 
@@ -3731,6 +3755,7 @@ void CModelLoader::ReloadFilesInList( IFileList *pFilesToReload )
 void CModelLoader::UnloadAllModels( bool bCheckReference )
 {
 	model_t			*model;
+	const bool bKeepUnused = bCheckReference && KeepUnusedModels();
 
 	FOR_EACH_MAP_FAST( m_Models, i )
 	{
@@ -3743,6 +3768,14 @@ void CModelLoader::UnloadAllModels( bool bCheckReference )
 				{
 					g_pMDLCache->MarkAsLoaded(model->studio);
 				}
+				continue;
+			}
+
+			// Unreferenced, but kept for later levels (see mod_keep_unused_models).
+			if ( model->type == mod_studio && bKeepUnused &&
+				 !( model->nLoadFlags & FMODELLOADER_DYNAMIC ) &&
+				 ( model->nLoadFlags & FMODELLOADER_LOADED ) )
+			{
 				continue;
 			}
 		}
@@ -3797,7 +3830,11 @@ void CModelLoader::PurgeUnusedModels( void )
 	UnloadAllModels( true );
 
 	// now purge unreferenced materials
-	materials->UncacheUnusedMaterials( true );
+	// SourceSpeedrunMod: not when keeping assets. Uncaching any material also
+	// rebuilds the render state of every material still loaded, which is a large
+	// part of each load; kept materials are reused by the next levels instead.
+	if ( !KeepUnusedModels() )
+		materials->UncacheUnusedMaterials( true );
 }
 
 //-----------------------------------------------------------------------------
