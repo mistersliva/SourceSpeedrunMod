@@ -1015,35 +1015,53 @@ bool Api_BindsList( const json::Value &, json::Writer &out, std::string & )
 	if ( inSection ) out.EndArray().EndObject();
 
 	// SourceSpeedrunMod bindings (not part of kb_act.lst).
-	static const struct { const char *command, *label; } kSpeedrunBinds[] = {
+	struct BindItem { const char *command, *label; };
+	static const BindItem kModBinds[] = {
 		{ "movement_cycle", "Cycle movement mode" },
 		{ "movement_hl2", "Movement: Half-Life 2 (ABH)" },
 		{ "movement_oe", "Movement: Half-Life 2 old engine (AFH)" },
 		{ "movement_hl1", "Movement: Half-Life 1" },
 		{ "autobhop_toggle", "Toggle auto bunnyhop" },
+	};
+	// Speedrun tools (commands in HtmlUI.cpp; save/load/reload/kill are engine commands).
+	static const BindItem kSpeedrunBinds[] = {
 		{ "timer_split", "Timer: start / split" },
 		{ "timer_reset", "Timer: reset" },
 		{ "timer_undo", "Timer: undo split" },
 		{ "timer_skip", "Timer: skip split" },
+		{ "save quick", "Quick save" },
+		{ "load quick", "Quick load" },
+		{ "ssm_saveload", "Saveload (save + load)" },
+		{ "ssm_savedeletion", "Save deletion (save \"\"; reload)" },
+		{ "reload", "Reload (restart from the last save)" },
+		{ "ssm_practice_save", "Practice save" },
+		{ "ssm_practice_load", "Practice load" },
+		{ "kill", "Kill (respawn)" },
+		{ "+ssm_duckjump", "Duck + jump" },
+		{ "ssm_showpos", "Toggle position display (cl_showpos)" },
 	};
-	out.BeginObject();
-	out.Prop( "title", "SourceSpeedrunMod" );
-	out.Key( "items" ).BeginArray();
-	for ( const auto &b : kSpeedrunBinds )
-	{
+	auto writeSection = [&]( const char *title, const BindItem *items, size_t count ) {
 		out.BeginObject();
-		out.Prop( "command", b.command );
-		out.Prop( "label", b.label );
-		out.Key( "keys" ).BeginArray();
-		auto it = bindings.find( b.command );
-		if ( it != bindings.end() )
+		out.Prop( "title", title );
+		out.Key( "items" ).BeginArray();
+		for ( size_t i = 0; i < count; ++i )
 		{
-			for ( const auto &k : it->second ) out.String( k );
+			out.BeginObject();
+			out.Prop( "command", items[i].command );
+			out.Prop( "label", items[i].label );
+			out.Key( "keys" ).BeginArray();
+			auto it = bindings.find( items[i].command );
+			if ( it != bindings.end() )
+			{
+				for ( const auto &k : it->second ) out.String( k );
+			}
+			out.EndArray();
+			out.EndObject();
 		}
-		out.EndArray();
-		out.EndObject();
-	}
-	out.EndArray().EndObject();
+		out.EndArray().EndObject();
+	};
+	writeSection( "SourceSpeedrunMod", kModBinds, std::size( kModBinds ) );
+	writeSection( "Speedrun", kSpeedrunBinds, std::size( kSpeedrunBinds ) );
 
 	out.EndArray();
 	return true;

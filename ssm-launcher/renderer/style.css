@@ -52,7 +52,7 @@ button { font: inherit; color: inherit; }
 
 /* ---------------------------------------------------------------- Left column */
 .side { position: fixed; top: 0; left: 0; bottom: 0; width: var(--side-w); display: flex; flex-direction: column; padding: 13vh 0 6vh 3.6rem; }
-.brand { display: flex; align-items: center; gap: 1.4rem; margin-bottom: 7vh; }
+.brand { display: flex; align-items: center; gap: 1rem; margin-bottom: 7vh; }
 .brand__mark { flex: 0 0 auto; height: 3.4rem; width: auto; }
 .brand__s { fill: #ededed; }
 .brand__speed { fill: var(--accent); }

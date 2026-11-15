@@ -1602,9 +1602,14 @@ void CGame::PlayVideoAndWait( const char *filename, bool bNeedHealthWarning )
 //-----------------------------------------------------------------------------
 // Purpose: Enable Windows shortcut keys when app is inactive.
 //-----------------------------------------------------------------------------
+// SourceSpeedrunMod: the Windows key works unless the player asks to block it
+// (Valve/Obsoletium blocked it whenever the game was the active app).
+static ConVar sys_block_windows_key( "sys_block_windows_key", "0", FCVAR_ARCHIVE,
+	"Block the Windows key while the game is the active window (prevents accidental presses in fullscreen)." );
+
 static bool ShouldEnableWindowsShortcutKeys() noexcept
 {
-	return !game->IsActiveApp();
+	return !sys_block_windows_key.GetBool() || !game->IsActiveApp();
 }
 #endif
 

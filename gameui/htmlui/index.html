@@ -32,7 +32,7 @@
     <!-- Left column: brand + menu -->
     <div class="side">
       <div class="brand">
-        <svg class="brand__mark" viewBox="0 0 74 56" role="img" aria-label="SSM"><g class="brand__speed"><path d="M2.4 24h12.6l-1.4 4H1z" opacity=".55"/><path d="M5 32h11l-1.4 4H3.6z" opacity=".85"/></g><path class="brand__s" d="M28 4h40l-3.2 9H34.9l-1.6 4.5H60L53.6 35.5 50.4 44.5 47.2 52H7l3.2-9h30l1.6-4.5H15L21.4 20.5z"/></svg>
+        <svg class="brand__mark" viewBox="0 0 69 56" role="img" aria-label="SSM"><g class="brand__speed"><path d="M2.4 24h12.6l-1.4 4H1z" opacity=".55"/><path d="M5 32h11l-1.4 4H3.6z" opacity=".85"/></g><path class="brand__s" d="M28 4h40l-3.2 9H34.9l-1.6 4.5H60L53.6 35.5 50.4 44.5 47.2 52H7l3.2-9h30l1.6-4.5H15L21.4 20.5z"/></svg>
         <span class="brand__rule"></span>
         <span class="brand__name">Source speedrun<br>mod</span>
       </div>
@@ -169,15 +169,20 @@
           <hr class="form-rule">
           <label class="field"><span>Timing method</span>
             <select data-pref="timer.method"><option value="game">Game time (no loads)</option><option value="real">Real time</option></select></label>
-          <label class="field"><span>Auto start on new game</span><span class="switch"><input type="checkbox" data-pref="timer.autoStart"><i></i></span></label>
-          <label class="field"><span>Auto split on new map</span><span class="switch"><input type="checkbox" data-pref="timer.autoSplit"><i></i></span></label>
+          <label class="field"><span>Count pauses as game time</span><span class="switch"><input type="checkbox" data-pref="timer.countPauses"><i></i></span></label>
+          <h3 class="form-section">Auto splitter (SourceSplit rules)</h3>
+          <label class="field"><span>Auto start, end and reset</span><span class="switch"><input type="checkbox" data-pref="timer.autoStartEnd"><i></i></span></label>
+          <label class="field"><span>Split on level transitions</span><span class="switch"><input type="checkbox" data-pref="timer.autoSplit"><i></i></span></label>
+          <label class="field"><span>Split every N maps</span>
+            <span class="range"><input type="range" id="timer-interval" min="1" max="10" step="1" data-pref="timer.splitInterval" data-format="int"><output for="timer-interval"></output></span></label>
+          <label class="field"><span>Never split on maps</span><input type="text" class="field-input" data-pref="timer.splitExclude" placeholder="d1_trainstation_02, d1_canals_05" spellcheck="false"></label>
           <hr class="form-rule">
           <label class="field"><span>Splits panel</span><span class="switch"><input type="checkbox" data-pref="timer.panel"><i></i></span></label>
           <label class="field"><span>Panel position</span>
             <select data-pref="timer.side"><option value="right">Top right</option><option value="left">Top left</option></select></label>
           <label class="field"><span>Visible splits</span>
             <span class="range"><input type="range" id="timer-rows" min="4" max="20" step="1" data-pref="timer.rows" data-format="int"><output for="timer-rows"></output></span></label>
-          <p class="form-note">Hotkeys: bind <b>Timer: start / split</b>, <b>reset</b>, <b>undo</b> and <b>skip</b> in Keyboard → SourceSpeedrunMod (console: timer_split, timer_reset, timer_undo, timer_skip). Best segments, attempts and new personal bests are saved back to the .lss file; the original is kept once as .lss.bak.</p>
+          <p class="form-note">Hotkeys: bind <b>Timer: start / split</b>, <b>reset</b>, <b>undo</b> and <b>skip</b> in Keyboard → SourceSpeedrunMod (console: timer_split, timer_reset, timer_undo, timer_skip). Best segments, attempts and new personal bests are saved back to the .lss file; the original is kept once as .lss.bak. Auto splitting follows <b>SourceSplit</b>: a new game resets the timer, Half-Life 2 starts when you gain control on the train and ends at the final flash on d3_breen_01, and the timer splits the first time you leave each map through a level transition (loading an older save does not split again).</p>
         </div>
 
         <!-- HUD -->
@@ -286,6 +291,7 @@
           <label class="field"><span data-loc="#GameUI_Crosshair">Crosshair</span><span class="switch"><input type="checkbox" data-cvar="crosshair"><i></i></span></label>
           <label class="field"><span>Quick info (health / ammo)</span><span class="switch"><input type="checkbox" data-cvar="hud_quickinfo"><i></i></span></label>
           <label class="field"><span>View bob</span><span class="switch"><input type="checkbox" data-cvar="cl_viewbob_enabled"><i></i></span></label>
+          <label class="field"><span>Block the Windows key in game</span><span class="switch"><input type="checkbox" data-cvar="sys_block_windows_key"><i></i></span></label>
           <label class="field"><span data-loc="#GameUI_DeveloperConsole">Enable developer console (~)</span><span class="switch"><input type="checkbox" data-cvar="con_enable"><i></i></span></label>
         </div>
       </div>

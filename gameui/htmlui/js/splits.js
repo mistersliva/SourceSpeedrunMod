@@ -10,7 +10,16 @@
  * Controls (console commands, bindable in Keyboard → SourceSpeedrunMod):
  *   timer_split  start / split      timer_reset  reset
  *   timer_undo   undo split         timer_skip   skip split
- * Optional: auto start on new game, auto split when entering a new map.
+ * Auto start / split / end follow SourceSplit's rules (github.com/fatalis/
+ * SourceSplit, WTFPL), fed directly by the game instead of reading its memory:
+ *   - a new game resets the timer; Half-Life 2 starts on the first tick the
+ *     player stands at the train start of d1_trainstation_01 (other maps start
+ *     as soon as the new game's first map is up),
+ *   - a level transition splits the first time you leave a map (loading an
+ *     older save never splits again); optionally every N maps, minus excluded maps,
+ *   - Half-Life 2 ends on d3_breen_01 when the player's weapons are stripped
+ *     (the final white flash),
+ *   - game time counts pauses like SourceSplit's HL2 timing (optional).
  */
 (function (global) {
   'use strict';
@@ -118,20 +127,27 @@
     realStart: 0,       // performance.now() at start
     started: null,      // Date at start
     splits: [],         // per segment { real, game } or null (skipped)
-    lastT: null, lastMap: '', maps: new Set(),
-    armed: false,       // auto start on the next map after a new game
+    lastT: null, lastMap: '',
+    visited: new Set(), // maps already left by a level transition this run
+    splitCount: 0,      // transitions since the last auto split (split interval)
+    armed: false,       // new game seen: start when the start condition is met
+    paused: false, pauseStart: 0,
+    hadWeapon: null,    // HL2 end detection (weapon strip on d3_breen_01)
     pb: false,
   };
   const method = () => (Prefs.get('timer.method') === 'real' ? 'real' : 'game');
   const realNow = () => (t.phase === 'idle' ? 0 : (t.phase === 'ended' ? t.realEnd : performance.now()) - t.realStart);
-  const current = () => ({ real: realNow() + run.offset, game: t.game + run.offset });
+  let pauseTick = 0;
+  const pauseNow = () => (t.phase === 'running' && t.paused && t.pauseStart && Prefs.get('timer.countPauses') ? performance.now() - t.pauseStart : 0);
+  const current = () => ({ real: realNow() + run.offset, game: t.game + pauseNow() + run.offset });
   const value = (x) => (x ? x[method()] ?? (method() === 'game' ? x.real : null) : null);
   // Comparison times fall back to real time when the file has no game time.
   const cmp = (x) => (x ? (x[method()] ?? x.real) : null);
 
   function start() {
-    Object.assign(t, { phase: 'running', game: 0, realStart: performance.now(), started: new Date(), splits: [], pb: false, armed: false });
-    t.maps = new Set(t.lastMap ? [t.lastMap] : []);
+    Object.assign(t, { phase: 'running', game: 0, realStart: performance.now(), started: new Date(), splits: [], pb: false, armed: false, splitCount: 0 });
+    t.visited = new Set();
+    t.pauseStart = t.paused ? performance.now() : 0;
     run.attempts++;
     render(true);
   }
@@ -236,27 +252,83 @@
 
   // Game time comes from the HUD state: map time (curtime) only advances while
   // the game simulates, so summing its increments removes loads and pauses.
+  // SourceSplit's Half-Life 2 rules.
+  const FIRST_MAPS = new Set(['d1_trainstation_01', 'ep1_citadel_00', 'ep2_outland_01']);
+  const HL2 = {
+    first: 'd1_trainstation_01',
+    startPos: [-9419, -2483],          // player gains control on the train
+    last: 'd3_breen_01',
+    stripPos: [-2449.5, -1380.2, -446], // the early weapon strip on that map is ignored
+  };
+  const dist2 = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]);
+  const dist3 = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+  const autoStartEnd = () => !!Prefs.get('timer.autoStartEnd');
+
+  function autoSplit(map) {
+    if (!Prefs.get('timer.autoSplit') || t.phase !== 'running') return;
+    const excluded = String(Prefs.get('timer.splitExclude') || '').toLowerCase().split(/[\s,;]+/).filter(Boolean);
+    if (excluded.includes(map.toLowerCase())) return;
+    if (++t.splitCount >= Math.max(1, Number(Prefs.get('timer.splitInterval')) || 1)) {
+      t.splitCount = 0;
+      split();
+    }
+  }
+
+  // From the server when a map finishes loading: newgame | transition | load | background.
+  function onLevel({ map = '', prev = '', type = '' }) {
+    // Like SourceSplit, only a new game on a game's first map resets the run.
+    // Any other "new game" (save deletion's reload, map command mid-run) keeps
+    // the time; it may only arm the start when no run is going.
+    if (type === 'newgame' && autoStartEnd()) {
+      if (FIRST_MAPS.has(map)) { reset(); t.armed = true; }
+      else if (t.phase === 'idle') t.armed = true;
+    }
+    if (type === 'transition' && prev && !t.visited.has(prev)) {
+      t.visited.add(prev);
+      autoSplit(prev);
+    }
+    // A new map session: its clock restarts, nothing to carry over.
+    t.lastT = null;
+    t.lastMap = map;
+    t.hadWeapon = null;
+  }
+
+  // Game time comes from the HUD state: map time (curtime) only advances while
+  // the game simulates, so summing its increments removes loads (and pauses,
+  // which are added back from the wall clock when counted).
   function onState(s) {
     if (s.time == null) return;
     const map = s.map || '';
-    const sameMap = map === t.lastMap;
-    if (t.armed && map && (map !== t.armedFrom || (t.armedT != null && s.time + 500 < t.armedT))) {
-      // New game: the run starts when the first map is up.
-      start();
-      t.maps = new Set([map]);
-      t.lastT = s.time;
-      t.lastMap = map;
-      render(false);
-      return;
+    const now = performance.now();
+
+    if (!!s.paused !== t.paused) {
+      t.paused = !!s.paused;
+      clearInterval(pauseTick);
+      if (t.paused) {
+        t.pauseStart = now;
+        // The game sends almost no state while paused; keep the clock moving.
+        if (Prefs.get('timer.countPauses')) pauseTick = setInterval(() => render(false), 33);
+      } else {
+        if (t.phase === 'running' && t.pauseStart && Prefs.get('timer.countPauses')) t.game += now - t.pauseStart;
+        t.pauseStart = 0;
+      }
     }
-    if (t.phase === 'running' && sameMap && t.lastT != null) {
+    if (t.phase === 'running' && map === t.lastMap && t.lastT != null) {
       const d = s.time - t.lastT;
       if (d > 0 && d < 250) t.game += d;
     }
-    if (t.phase === 'running' && map && !sameMap && t.lastMap) {
-      if (Prefs.get('timer.autoSplit') && !t.maps.has(map)) split();
-      t.maps.add(map);
+
+    if (t.armed && map && !t.paused) {
+      const pos = s.pos || [0, 0, 0];
+      if (map !== HL2.first || dist2(pos, HL2.startPos) <= 1) start();
     }
+
+    if (t.phase === 'running' && autoStartEnd() && map === HL2.last && s.pos) {
+      const hasWeapon = !!s.weapon;
+      if (t.hadWeapon === true && !hasWeapon && s.alive && s.health > 0 && dist3(s.pos, HL2.stripPos) > 256) split();
+      t.hadWeapon = hasWeapon;
+    }
+
     t.lastT = s.time;
     t.lastMap = map;
     render(false);
@@ -320,13 +392,19 @@
     $('splits-attempts').textContent = run.attempts ? String(run.attempts) : '';
   }
 
+  // Only touch the DOM when a value actually changes: every write makes CEF
+  // repaint and re-upload the HUD texture, which costs a lot of FPS.
+  function setText(el, v) { if (el.textContent !== v) el.textContent = v; }
+  function setClass(el, v) { if (el.className !== v) el.className = v; }
+
   function render(structural) {
     const panel = $('splits');
     if (!panel) return;
     const show = visible();
     if (panel.hidden === show) panel.hidden = !show;
-    document.body.classList.toggle('has-splits', show);
-    document.body.classList.toggle('splits-left', Prefs.get('timer.side') === 'left');
+    const bc = document.body.classList, left = Prefs.get('timer.side') === 'left';
+    if (bc.contains('has-splits') !== show) bc.toggle('has-splits', show);
+    if (bc.contains('splits-left') !== left) bc.toggle('splits-left', left);
 
     const now = value(current()) ?? 0;
     const time = t.phase === 'idle' ? run.offset : t.phase === 'ended' ? value(t.splits[t.splits.length - 1]) ?? now : now;
@@ -339,8 +417,8 @@
       const lastDelta = cur > 0 && t.splits[cur - 1] && cmp(run.segments[cur - 1].pb) != null ? value(t.splits[cur - 1]) - cmp(run.segments[cur - 1].pb) : null;
       state = pb != null && now > pb ? 'is-behind-lose' : lastDelta != null && lastDelta > 0 ? 'is-behind-gain' : 'is-ahead-gain';
     }
-    timerEl.className = `splits__timer ${state}`;
-    timerEl.textContent = fmtTimer(time);
+    setText(timerEl, fmtTimer(time));
+    setClass(timerEl, `splits__timer ${state}`);
 
     if (!show) return;
     const key = `${file}|${t.phase}|${t.splits.length}|${Prefs.get('timer.rows')}|${method()}|${run.attempts}`;
@@ -356,8 +434,9 @@
     if (live && t.phase === 'running') {
       const pb = cmp(run.segments[cur]?.pb);
       const d = live.children[1];
-      if (pb != null && now > pb) { d.textContent = fmtDelta(now - pb); d.className = 'split__delta is-behind-lose'; }
-      else if (d.textContent) { d.textContent = ''; d.className = 'split__delta'; }
+      const behind = pb != null && now > pb;
+      setText(d, behind ? fmtDelta(now - pb) : '');
+      setClass(d, behind ? 'split__delta is-behind-lose' : 'split__delta');
     }
   }
 
@@ -383,19 +462,7 @@
 
   // Commands from the engine (console / binds) and signals from the menu page.
   Source.on('timer', ({ action }) => ({ split, reset, undo, skip }[action]?.()));
-  addEventListener('storage', (e) => {
-    if (e.key !== 'htmlui.timer.signal' || !e.newValue) return;
-    let sig = null;
-    try { sig = JSON.parse(e.newValue); } catch {}
-    if (sig?.action === 'newgame' && Prefs.get('timer.autoStart')) {
-      reset();
-      // Start once the new game's map is up: a different map, or the same map
-      // with its clock restarted.
-      t.armed = true;
-      t.armedFrom = t.lastMap;
-      t.armedT = t.lastT;
-    }
-  });
+  Source.on('level', onLevel);
 
   if (Source.IN_GAME) loadFile(Prefs.get('timer.file'));
 

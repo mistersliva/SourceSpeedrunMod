@@ -150,7 +150,7 @@ body.is-loading #main { opacity: 0; }
   padding: 13vh 0 5vh 5.5vw;
 }
 
-.brand { display: flex; align-items: center; gap: 1.6rem; margin-bottom: 5vh; }
+.brand { display: flex; align-items: center; gap: 1.05rem; margin-bottom: 5vh; }
 .brand__mark { flex: 0 0 auto; height: 3.4rem; width: auto; }
 .brand__s { fill: #ededed; }
 .brand__speed { fill: var(--accent); }
@@ -356,3 +356,6 @@ body.is-quickload #quickload { display: block; }
 .btn-row { display: flex; gap: 0.4rem; justify-self: end; }
 .form-note { margin: 0.9rem 0.2rem 0.2rem; color: var(--text-dim); font-size: 0.82rem; line-height: 1.45; }
 .form-note b { color: var(--text-muted); font-weight: 400; }
+
+.field .field-input { width: 15rem; justify-self: end; height: 2.1rem; padding: 0 0.6rem; font-size: 0.9rem; }
+

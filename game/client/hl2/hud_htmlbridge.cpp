@@ -352,6 +352,11 @@ private:
 		char map[MAX_PATH];
 		V_FileBase( engine->GetLevelName(), map, sizeof( map ) );
 		j.Key( "map" ).Str( map );
+		// Speedrun timer: SourceSplit-style start/end rules use the position,
+		// "game time with pauses" needs the pause state.
+		const Vector &org = player->GetAbsOrigin();
+		j.Key( "pos" ).Begin( '[' ).Num( org.x ).Item().Num( org.y ).Item().Num( org.z ).End( ']' );
+		j.Key( "paused" ).Bool( engine->IsPaused() );
 
 		// Active weapon
 		j.Key( "weapon" );

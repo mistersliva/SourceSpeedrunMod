@@ -45,8 +45,11 @@
     'timer.side': 'right',
     'timer.rows': 10,
     'timer.method': 'game',
-    'timer.autoStart': true,
-    'timer.autoSplit': true,
+    'timer.autoStartEnd': true,   // SourceSplit: reset on new game, HL2 start/end
+    'timer.autoSplit': true,      // split on level transitions
+    'timer.splitInterval': 1,
+    'timer.splitExclude': '',
+    'timer.countPauses': true,
     'hud.mode': true,
     'hud.vitals': true,
     'hud.ammo': true,

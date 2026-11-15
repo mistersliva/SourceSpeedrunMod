@@ -57,6 +57,22 @@ CHtmlUI &HtmlUI()
 }
 
 // Speedrun timer (HUD page, js/splits.js). LiveSplit-style hotkeys.
+// Speedrun binds (Settings -> Keyboard -> Speedrun). Each runs the usual
+// community bind through the command buffer, as an alias would.
+static void SpeedrunCmd( const char *text )
+{
+	engine->ClientCmd_Unrestricted( text );
+}
+CON_COMMAND( ssm_saveload, "Speedrun: save and load at once (save ssm_sl; load ssm_sl)." ) { SpeedrunCmd( "save ssm_sl; load ssm_sl\n" ); }
+CON_COMMAND( ssm_savedeletion, "Speedrun: save deletion (save \"\"; reload) - restarts the current map from a save that doesn't exist." ) { SpeedrunCmd( "save \"\"; reload\n" ); }
+CON_COMMAND( ssm_practice_save, "Speedrun: save a practice save (ssm_practice)." ) { SpeedrunCmd( "save ssm_practice\n" ); }
+CON_COMMAND( ssm_practice_load, "Speedrun: load the practice save (ssm_practice)." ) { SpeedrunCmd( "load ssm_practice\n" ); }
+CON_COMMAND( ssm_showpos, "Speedrun: toggle cl_showpos." ) { SpeedrunCmd( "incrementvar cl_showpos 0 1 1\n" ); }
+static void SSM_DuckJumpDown( const CCommand & ) { SpeedrunCmd( "+duck; +jump\n" ); }
+static void SSM_DuckJumpUp( const CCommand & ) { SpeedrunCmd( "-jump; -duck\n" ); }
+static ConCommand s_ssmDuckJumpDown( "+ssm_duckjump", SSM_DuckJumpDown, "Speedrun: duck and jump together." );
+static ConCommand s_ssmDuckJumpUp( "-ssm_duckjump", SSM_DuckJumpUp, "Speedrun: release duck + jump." );
+
 CON_COMMAND( timer_split, "Speedrun timer: start, or split if running." ) { HtmlUI().EmitHud( "timer", "{\"action\":\"split\"}" ); }
 CON_COMMAND( timer_reset, "Speedrun timer: reset (saves best segments / PB)." ) { HtmlUI().EmitHud( "timer", "{\"action\":\"reset\"}" ); }
 CON_COMMAND( timer_undo, "Speedrun timer: undo the last split." ) { HtmlUI().EmitHud( "timer", "{\"action\":\"undo\"}" ); }

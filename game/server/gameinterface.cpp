@@ -150,6 +150,7 @@ CSteamGameServerAPIContext *steamgameserverapicontext = &s_SteamGameServerAPICon
 IUploadGameStats *gamestatsuploader = NULL;
 
 // memdbgon must be the last include file in a .cpp file!!!
+#include "GameUI/IHtmlHud.h"
 #include "tier0/memdbgon.h"
 
 CTimedEventMgr g_NetworkPropertyEventMgr;
@@ -958,6 +959,39 @@ bool CServerGameDLL::IsRestoring()
 }
 
 // Called any time a new level is started (after GameInit() also on level transitions within a game)
+//-----------------------------------------------------------------------------
+// SourceSpeedrunMod: tell the HTML HUD speedrun timer (gameui.dll, IHtmlHud) how
+// this map was loaded, so it can split on level transitions only and reset on a
+// new game, like SourceSplit does with LiveSplit.
+//-----------------------------------------------------------------------------
+static void SSM_NotifyLevelLoad( const char *pMapName, const char *pOldLevel )
+{
+	static IHtmlHud *s_pHud = nullptr;
+	static bool s_bLookedUp = false;
+	if ( !s_bLookedUp )
+	{
+		s_bLookedUp = true;
+		static CDllDemandLoader s_GameUI( "gameui" );
+		if ( CreateInterfaceFn factory = s_GameUI.GetFactory() )
+			s_pHud = static_cast<IHtmlHud *>( factory( HTMLHUD_INTERFACE_VERSION, nullptr ) );
+	}
+	if ( !s_pHud || gpGlobals->maxClients != 1 )
+		return;
+
+	const char *type = "newgame";
+	switch ( gpGlobals->eLoadType )
+	{
+		case MapLoad_Transition: type = "transition"; break;
+		case MapLoad_LoadGame: type = "load"; break;
+		case MapLoad_Background: type = "background"; break;
+		default: break;
+	}
+	char json[512];
+	V_sprintf_safe( json, "{\"map\":\"%s\",\"prev\":\"%s\",\"type\":\"%s\"}",
+		pMapName ? pMapName : "", pOldLevel ? pOldLevel : "", type );
+	s_pHud->Event( "level", json );
+}
+
 bool CServerGameDLL::LevelInit( const char *pMapName, char const *pMapEntities, char const *pOldLevel, char const *pLandmarkName, bool loadGame, bool background )
 {
 	VPROF("CServerGameDLL::LevelInit");
@@ -1074,6 +1108,8 @@ bool CServerGameDLL::LevelInit( const char *pMapName, char const *pMapEntities, 
 	// clear any pending autosavedangerous
 	m_fAutoSaveDangerousTime = 0.0f;
 	m_fAutoSaveDangerousMinHealthToCommit = 0.0f;
+
+	SSM_NotifyLevelLoad( pMapName, pOldLevel );
 	return true;
 }
 

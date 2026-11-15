@@ -118,8 +118,6 @@
     if (!info.noDifficulty) args.skill = skill;
     Source.sound('start');
     UI.closeAll();
-    // Speedrun timer (HUD page): auto start once the new game's map is up.
-    try { localStorage.setItem('htmlui.timer.signal', JSON.stringify({ action: 'newgame', at: Date.now() })); } catch {}
     await Source.call('newgame', args);
   }
   $('#start-game').addEventListener('click', startNewGame);
