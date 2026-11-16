@@ -144,11 +144,32 @@
   // Comparison times fall back to real time when the file has no game time.
   const cmp = (x) => (x ? (x[method()] ?? x.real) : null);
 
+  // Replays: the engine records the run (ssm_replay_record) from start to end
+  // or reset; it keeps recording through level changes and save loads.
+  function replayBegin() {
+    t.replay = null;
+    if (!Prefs.get('replay.autoRecord')) return;
+    const d = new Date(), p = (n) => String(n).padStart(2, '0');
+    const map = String(t.lastMap || 'run').replace(/[^\w-]/g, '_');
+    t.replay = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}_${map}`;
+    Source.cmd(`ssm_replay_stop; ssm_replay_record ${t.replay}`);
+  }
+
+  function replayEnd(keep) {
+    const name = t.replay;
+    t.replay = null;
+    if (!name) return;
+    Source.cmd('ssm_replay_stop');
+    // The engine closes the file on its next frame.
+    if (!keep) setTimeout(() => Source.call('replays.delete', { name }).catch(() => {}), 1000);
+  }
+
   function start() {
     Object.assign(t, { phase: 'running', game: 0, realStart: performance.now(), started: new Date(), splits: [], pb: false, armed: false, splitCount: 0 });
     t.visited = new Set();
     t.pauseStart = t.paused ? performance.now() : 0;
     run.attempts++;
+    replayBegin();
     render(true);
   }
 
@@ -185,6 +206,7 @@
   function finish() {
     t.phase = 'ended';
     t.realEnd = performance.now();
+    replayEnd(true);
     if (!run.segments.length) return;
     const final = cmp(t.splits[t.splits.length - 1]);
     const pbFinal = cmp(run.segments[run.segments.length - 1].pb);
@@ -241,6 +263,7 @@
 
   function reset() {
     if (t.phase === 'idle') return;
+    replayEnd(!!Prefs.get('replay.keepResets'));
     applyPb();
     commitAttempt();
     t.phase = 'idle';

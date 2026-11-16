@@ -56,7 +56,8 @@ struct MovieInfo_t
 		FMOVIE_VID	= ( 1 << 1 ),
 		FMOVIE_WAV	= ( 1 << 2 ),
 		FMOVIE_VIDSOUND = ( 1 << 3 ),
-		FMOVIE_JPG = ( 1<< 4 )
+		FMOVIE_JPG = ( 1<< 4 ),
+		FMOVIE_FFMPEG = ( 1 << 5 )	// SourceSpeedrunMod: frames piped to ffmpeg, muxed into an .mp4
 	};
 
 	MovieInfo_t()
@@ -95,6 +96,11 @@ struct MovieInfo_t
 		return ( type & FMOVIE_JPG ) ? true : false;
 	}
 
+
+	bool	DoFFmpeg() const
+	{
+		return ( type & FMOVIE_FFMPEG ) ? true : false;
+	}
 
 	bool	DoVideo() const
 	{

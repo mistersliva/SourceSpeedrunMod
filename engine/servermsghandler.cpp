@@ -234,7 +234,9 @@ void CClientState::Disconnect( const char *pszReason, bool bShowMainMenu )
 	// stop any demo activities
 #ifndef _XBOX
 	demoplayer->StopPlayback();
-	demorecorder->StopRecording();
+	extern bool SSM_ReplayKeepRecordingOnDisconnect();
+	if ( !SSM_ReplayKeepRecordingOnDisconnect() )
+		demorecorder->StopRecording();
 #endif
 
 	S_StopAllSounds( true );

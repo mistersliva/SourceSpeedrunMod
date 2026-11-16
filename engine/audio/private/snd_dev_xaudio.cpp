@@ -24,6 +24,9 @@
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
+// snd_mix.cpp: feeds startmovie's .wav.
+bool SND_RecordPaintBuffer(int start_time, int end_time);
+
 /**
  * @brief Should spew XAudio2 packets delivery stats?
  */
@@ -1118,6 +1121,13 @@ unsigned CAudioXAudio2::TransferMultichannelSurroundInterleaved(
 // Transfer up to a full paintbuffer (PAINTBUFFER_SIZE) of samples out to the
 // XAudio2 buffer(s).
 void CAudioXAudio2::TransferSamples(int end_time) {
+  // Movie recording (startmovie) runs faster or slower than real time: write
+  // the mix straight into the .wav and do not queue it on the device, whose
+  // buffers would run out and drop sound.
+  if (SND_RecordPaintBuffer(g_paintedtime, end_time)) {
+    return;
+  }
+
   if (audio_buffer_head_pos_ - audio_buffer_tail_pos_ >=
       kMaxXAudio2DeviceBuffersCount) {
     DebugWarn("No free audio buffers! All %u buffers taken.\n",

@@ -127,6 +127,16 @@ public:
 	~CDemoRecorder();
 	CDemoRecorder();
 
+	// SourceSpeedrunMod: close the current file, the next signon starts the next part.
+	void	EndReplayPart()
+	{
+		if ( m_DemoFile.IsOpen() )
+		{
+			CloseDemoFile();
+			m_nDemoNumber++;
+		}
+	}
+
 	CDemoFile *GetDemoFile( void );
 	int		GetRecordingTick( void );
 

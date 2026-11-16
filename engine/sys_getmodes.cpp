@@ -1672,6 +1672,12 @@ void CVideoMode_Common::WriteMovieFrame( const MovieInfo_t& info )
 		g_pVideoRecorder->AppendVideoFrame( hp );
     }
 
+    if ( info.DoFFmpeg() )
+    {
+        extern void CL_FFmpegFrame( const void *pData, int nBytes );
+        CL_FFmpegFrame( hp, imagesize * 3 );
+    }
+
     delete[] hp;
 }
 

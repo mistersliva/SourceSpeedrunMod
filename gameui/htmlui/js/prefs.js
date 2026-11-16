@@ -50,6 +50,9 @@
     'timer.splitInterval': 1,
     'timer.splitExclude': '',
     'timer.countPauses': true,
+    // Replays (engine: ssm_replay_record), started and stopped with the timer
+    'replay.autoRecord': true,
+    'replay.keepResets': false,
     'hud.mode': true,
     'hud.vitals': true,
     'hud.ammo': true,

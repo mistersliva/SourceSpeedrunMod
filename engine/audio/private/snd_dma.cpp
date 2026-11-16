@@ -6397,7 +6397,9 @@ void S_ShutdownMixThread()
 void S_Update_( float mixAheadTime )
 {
 	// dimhotepus: Enable async sound mix for regular PC.
-	if ( !snd_mix_async.GetBool() )
+	// SourceSpeedrunMod: movie recording advances sound time per host frame,
+	// which the 33 ms mix thread would undersample; mix on this thread then.
+	if ( !snd_mix_async.GetBool() || cl_movieinfo.IsRecording() )
 	{
 		S_ShutdownMixThread();
 		S_Update_Guts( mixAheadTime );

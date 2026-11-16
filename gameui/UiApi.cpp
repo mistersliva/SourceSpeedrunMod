@@ -385,6 +385,8 @@ bool Api_LocalizePrefix( const json::Value &args, json::Writer &out, std::string
 	return true;
 }
 
+bool CutscenelessDir( char *pOut, int nOut );
+
 bool Api_GameInfo( const json::Value &, json::Writer &out, std::string & )
 {
 	out.BeginObject();
@@ -407,6 +409,8 @@ bool Api_GameInfo( const json::Value &, json::Writer &out, std::string & )
 	engine->GetUILanguage( lang, sizeof( lang ) );
 	out.Prop( "language", lang[0] ? lang : "english" );
 	out.Prop( "x64", static_cast<bool>( sizeof( void * ) == 8 ) );
+	char cutsceneless[MAX_PATH];
+	out.Prop( "cutsceneless", CutscenelessDir( cutsceneless, sizeof( cutsceneless ) ) );
 	out.EndObject();
 	return true;
 }
@@ -708,6 +712,222 @@ bool Api_SplitsFolder( const json::Value &, json::Writer &out, std::string & )
 	out.Bool( true );
 	return true;
 }
+
+//-----------------------------------------------------------------------------
+// Replays (engine: ssm_replay_record / _play / _render). A replay is
+// replays/<name>.dem plus <name>_2.dem, _3.dem ... and maybe <name>.mp4.
+//-----------------------------------------------------------------------------
+constexpr char kReplaysDir[] = "replays";
+
+bool IsSafeReplayName( const std::string &name )
+{
+	if ( name.empty() || name.size() > 100 )
+		return false;
+	for ( char c : name )
+	{
+		if ( !( V_isalnum( c ) || c == '-' || c == '_' ) )
+			return false;
+	}
+	return true;
+}
+
+bool FFmpegInstalled()
+{
+	char exe[MAX_PATH];
+	if ( !GetModuleFileNameA( nullptr, exe, sizeof( exe ) ) )
+		return false;
+	V_StripFilename( exe );
+	V_strcat_safe( exe, "\\bin\\ffmpeg.exe" );
+	return GetFileAttributesA( exe ) != INVALID_FILE_ATTRIBUTES;
+}
+
+// "<name>_<n>" -> name, n when <name>.dem exists (map names end in _NN too);
+// otherwise the stem is a replay of its own.
+void SplitReplayPart( const std::string &stem, std::string &base, int &part )
+{
+	base = stem;
+	part = 1;
+	const size_t us = stem.rfind( '_' );
+	if ( us == std::string::npos || us + 1 >= stem.size() )
+		return;
+	for ( size_t i = us + 1; i < stem.size(); ++i )
+	{
+		if ( !V_isdigit( stem[i] ) )
+			return;
+	}
+	const int n = V_atoi( stem.c_str() + us + 1 );
+	if ( n < 2 || n >= 10000 )
+		return;
+	char first[MAX_PATH];
+	V_sprintf_safe( first, "%s/%s.dem", kReplaysDir, stem.substr( 0, us ).c_str() );
+	if ( g_pFullFileSystem->FileExists( first, "MOD" ) )
+	{
+		base = stem.substr( 0, us );
+		part = n;
+	}
+}
+
+bool Api_ReplaysList( const json::Value &, json::Writer &out, std::string & )
+{
+	struct Replay
+	{
+		int parts = 0;
+		int64 size = 0;
+		time_t time = 0;
+		bool mp4 = false;
+	};
+	std::map<std::string, Replay> replays;
+	std::vector<std::string> mp4s;
+
+	char pattern[MAX_PATH];
+	V_sprintf_safe( pattern, "%s/*.*", kReplaysDir );
+	FileFindHandle_t handle = FILESYSTEM_INVALID_FIND_HANDLE;
+	for ( const char *name = g_pFullFileSystem->FindFirstEx( pattern, "MOD", &handle ); name; name = g_pFullFileSystem->FindNext( handle ) )
+	{
+		const std::string file = name;
+		const size_t dot = file.rfind( '.' );
+		if ( dot == std::string::npos )
+			continue;
+		const std::string stem = file.substr( 0, dot ), ext = file.substr( dot + 1 );
+		if ( !V_stricmp( ext.c_str(), "mp4" ) )
+		{
+			mp4s.push_back( stem );
+			continue;
+		}
+		if ( V_stricmp( ext.c_str(), "dem" ) )
+			continue;
+		std::string base;
+		int part;
+		SplitReplayPart( stem, base, part );
+		char path[MAX_PATH];
+		V_sprintf_safe( path, "%s/%s", kReplaysDir, name );
+		Replay &r = replays[base];
+		r.parts = max( r.parts, part );
+		r.size += g_pFullFileSystem->Size( path, "MOD" );
+		r.time = max( r.time, static_cast<time_t>( g_pFullFileSystem->GetFileTime( path, "MOD" ) ) );
+	}
+	if ( handle != FILESYSTEM_INVALID_FIND_HANDLE )
+		g_pFullFileSystem->FindClose( handle );
+	for ( const auto &m : mp4s )
+	{
+		auto it = replays.find( m );
+		if ( it != replays.end() )
+			it->second.mp4 = true;
+	}
+
+	std::vector<std::pair<std::string, Replay>> sorted( replays.begin(), replays.end() );
+	std::sort( sorted.begin(), sorted.end(), []( const auto &a, const auto &b ) { return a.second.time > b.second.time; } );
+
+	out.BeginObject();
+	out.Key( "ffmpeg" ); out.Bool( FFmpegInstalled() );
+	out.Key( "replays" );
+	out.BeginArray();
+	for ( const auto &[name, r] : sorted )
+	{
+		if ( !IsSafeReplayName( name ) )
+			continue;
+		out.BeginObject();
+		out.Key( "name" ); out.String( name );
+		out.Key( "parts" ); out.Int( r.parts );
+		out.Key( "size" ); out.Number( static_cast<double>( r.size ) );
+		out.Key( "time" ); out.Number( static_cast<double>( r.time ) );
+		out.Key( "mp4" ); out.Bool( r.mp4 );
+		out.EndObject();
+	}
+	out.EndArray();
+	out.EndObject();
+	return true;
+}
+
+bool Api_ReplaysDelete( const json::Value &args, json::Writer &out, std::string &error )
+{
+	const std::string name = args["name"].AsString();
+	if ( !IsSafeReplayName( name ) )
+	{
+		error = "invalid replay name";
+		return false;
+	}
+	char path[MAX_PATH];
+	V_sprintf_safe( path, "%s/%s.dem", kReplaysDir, name.c_str() );
+	g_pFullFileSystem->RemoveFile( path, "MOD" );
+	for ( int part = 2; part < 10000; ++part )
+	{
+		V_sprintf_safe( path, "%s/%s_%d.dem", kReplaysDir, name.c_str(), part );
+		if ( !g_pFullFileSystem->FileExists( path, "MOD" ) )
+			break;
+		g_pFullFileSystem->RemoveFile( path, "MOD" );
+	}
+	if ( args["video"].AsBool() )
+	{
+		V_sprintf_safe( path, "%s/%s.mp4", kReplaysDir, name.c_str() );
+		g_pFullFileSystem->RemoveFile( path, "MOD" );
+	}
+	out.Bool( true );
+	return true;
+}
+
+bool Api_ReplaysFolder( const json::Value &args, json::Writer &out, std::string & )
+{
+	g_pFullFileSystem->CreateDirHierarchy( kReplaysDir, "MOD" );
+	char full[MAX_PATH];
+	const std::string video = args["video"].AsString();
+	char rel[MAX_PATH];
+	if ( IsSafeReplayName( video ) )
+		V_sprintf_safe( rel, "%s/%s.mp4", kReplaysDir, video.c_str() );
+	else
+		V_strcpy_safe( rel, kReplaysDir );
+	if ( !g_pFullFileSystem->RelativePathToFullPath( rel, "MOD", full, sizeof( full ) ) )
+	{
+		out.Bool( false );
+		return true;
+	}
+	V_FixSlashes( full );
+	if ( IsSafeReplayName( video ) )
+	{
+		// Show the video selected in Explorer.
+		char params[MAX_PATH + 16];
+		V_sprintf_safe( params, "/select,\"%s\"", full );
+		ShellExecuteA( nullptr, "open", "explorer.exe", params, nullptr, SW_SHOWNORMAL );
+	}
+	else
+	{
+		ShellExecuteA( nullptr, "open", full, nullptr, nullptr, SW_SHOWNORMAL );
+	}
+	out.Bool( true );
+	return true;
+}
+
+//-----------------------------------------------------------------------------
+// Cutsceneless maps (optional download from the launcher into
+// <game>\cutsceneless\maps). When on, that folder goes in front of every other
+// GAME search path, so the next map loaded comes from it.
+//-----------------------------------------------------------------------------
+bool CutscenelessDir( char *pOut, int nOut )
+{
+	char exe[MAX_PATH];
+	if ( !GetModuleFileNameA( nullptr, exe, sizeof( exe ) ) )
+		return false;
+	V_StripFilename( exe );
+	V_snprintf( pOut, nOut, "%s\\cutsceneless", exe );
+	char maps[MAX_PATH];
+	V_sprintf_safe( maps, "%s\\maps", pOut );
+	return GetFileAttributesA( maps ) != INVALID_FILE_ATTRIBUTES;
+}
+
+void CutscenelessChanged( IConVar *var, const char *, float )
+{
+	char dir[MAX_PATH];
+	const bool bInstalled = CutscenelessDir( dir, sizeof( dir ) );
+	g_pFullFileSystem->RemoveSearchPath( dir, "GAME" );
+	if ( static_cast<ConVar *>( var )->GetBool() && bInstalled )
+	{
+		g_pFullFileSystem->AddSearchPath( dir, "GAME", PATH_ADD_TO_HEAD );
+		ConMsg( "Cutsceneless maps on; they are used from the next map loaded.\n" );
+	}
+}
+
+ConVar ssm_cutsceneless( "ssm_cutsceneless", "0", FCVAR_ARCHIVE,
+	"Use the Cutsceneless maps (installed from the launcher). Start a new game after changing it.", CutscenelessChanged );
 
 bool Api_SavesList( const json::Value &, json::Writer &out, std::string & )
 {
@@ -1296,6 +1516,9 @@ constexpr Method kMethods[] = {
 	{ "saves.load", Api_SavesLoad },
 	{ "saves.save", Api_SavesSave },
 	{ "saves.delete", Api_SavesDelete },
+	{ "replays.list", Api_ReplaysList },
+	{ "replays.delete", Api_ReplaysDelete },
+	{ "replays.folder", Api_ReplaysFolder },
 	{ "video.get", Api_VideoGet },
 	{ "video.set", Api_VideoSet },
 	{ "binds.list", Api_BindsList },

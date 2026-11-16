@@ -42,6 +42,7 @@
         <button class="menu__item" data-open="newgame">New game</button>
         <button class="menu__item" data-open="loadgame">Load game</button>
         <button class="menu__item" data-open="savegame" data-when="cansave">Save game</button>
+        <button class="menu__item" data-open="replays">Replays</button>
         <button class="menu__item" data-open="options">Settings</button>
         <button class="menu__item" data-action="console">Console</button>
         <button class="menu__item" data-action="disconnect" data-when="multiplayer">Disconnect</button>
@@ -123,6 +124,25 @@
     </div>
   </section>
 
+  <!-- ===================================================== Replays -->
+  <section class="layer" data-layer="replays" hidden>
+    <div class="panel">
+      <header class="panel__header">
+        <h2>Replays</h2>
+      </header>
+      <div class="panel__body">
+        <ul class="save-list" id="replay-list"></ul>
+      </div>
+      <footer class="panel__footer">
+        <button class="btn btn--danger" id="replay-delete" disabled>Delete</button>
+        <button class="btn" id="replay-folder">Open folder</button>
+        <div class="spacer"></div>
+        <button class="btn" id="replay-render" disabled>Render MP4</button>
+        <button class="btn btn--primary" id="replay-play" disabled>Watch</button>
+      </footer>
+    </div>
+  </section>
+
   <!-- ===================================================== Options -->
   <section class="layer layer--wide" data-layer="options" hidden>
     <div class="panel" data-tabs id="options-tabs">
@@ -176,6 +196,9 @@
           <label class="field"><span>Split every N maps</span>
             <span class="range"><input type="range" id="timer-interval" min="1" max="10" step="1" data-pref="timer.splitInterval" data-format="int"><output for="timer-interval"></output></span></label>
           <label class="field"><span>Never split on maps</span><input type="text" class="field-input" data-pref="timer.splitExclude" placeholder="d1_trainstation_02, d1_canals_05" spellcheck="false"></label>
+          <h3 class="form-section">Replays</h3>
+          <label class="field"><span>Record every run</span><span class="switch"><input type="checkbox" data-pref="replay.autoRecord"><i></i></span></label>
+          <label class="field"><span>Keep replays of reset runs</span><span class="switch"><input type="checkbox" data-pref="replay.keepResets"><i></i></span></label>
           <hr class="form-rule">
           <label class="field"><span>Splits panel</span><span class="switch"><input type="checkbox" data-pref="timer.panel"><i></i></span></label>
           <label class="field"><span>Panel position</span>
@@ -286,6 +309,8 @@
           <label class="field"><span>Movement physics</span>
             <select data-cvar="sv_movement_mode"><option value="0">Half-Life 2 — accelerated back hop</option><option value="1">Half-Life 2 old engine — accelerated forward hop</option><option value="2">Half-Life 1 — bunnyhop cap</option></select></label>
           <label class="field"><span>Auto bunnyhop</span><span class="switch"><input type="checkbox" data-cvar="sv_autobunnyhopping"><i></i></span></label>
+          <label class="field cutsceneless-only" hidden><span>Cutsceneless maps</span><span class="switch"><input type="checkbox" data-cvar="ssm_cutsceneless"><i></i></span></label>
+          <p class="form-note cutsceneless-only" hidden>peng's Cutsceneless patch. Takes effect from the next map; start a new game after switching, since saves made on the other maps do not load correctly.</p>
           <hr class="form-rule">
           <label class="field" id="skill-field"><span data-loc="#GameUI_Difficulty">Difficulty</span>
             <select data-cvar="skill"><option value="1" data-loc="#GameUI_Easy">Easy</option><option value="2" data-loc="#GameUI_Medium">Normal</option><option value="3" data-loc="#GameUI_Hard">Hard</option></select></label>

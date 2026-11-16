@@ -221,6 +221,83 @@
   });
   UI.define('loadgame', { onOpen: refreshLoad });
 
+  // Replays (engine: ssm_replay_play / ssm_replay_render)
+  let replaySelected = null;
+  let replayFfmpeg = false;
+  const replayMap = (name) => name.replace(/^\d{4}-\d\d-\d\d_\d\d-\d\d-\d\d_?/, '') || name;
+  const replayDate = (name) => {
+    const m = /^(\d{4})-(\d\d)-(\d\d)_(\d\d)-(\d\d)/.exec(name);
+    return m ? `${m[3]}.${m[2]}.${m[1]} ${m[4]}:${m[5]}` : '';
+  };
+  const formatSize = (b) => (b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
+
+  function updateReplayButtons() {
+    const has = !!replaySelected;
+    $('#replay-play').disabled = $('#replay-delete').disabled = !has;
+    $('#replay-render').disabled = !has || !replayFfmpeg;
+    $('#replay-render').title = replayFfmpeg ? '' : 'Install ffmpeg in the launcher (Settings) to render videos';
+  }
+
+  async function refreshReplays() {
+    const list = $('#replay-list');
+    replaySelected = null;
+    const res = await Source.call('replays.list');
+    replayFfmpeg = !!res.ffmpeg;
+    updateReplayButtons();
+    if (!res.replays.length) {
+      list.replaceChildren(h('li', { class: 'placeholder', text: 'No replays yet. Runs are recorded while the timer runs.' }));
+      return;
+    }
+    list.replaceChildren(...res.replays.map((r) => {
+      const parts = r.parts === 1 ? '1 part' : `${r.parts} parts`;
+      const li = h('li', { class: 'save save--nothumb', tabindex: 0 },
+        h('div', { class: 'save__info' },
+          h('div', { class: 'save__title' }, replayMap(r.name), r.mp4 && h('span', { class: 'badge', text: 'MP4' })),
+          h('div', { class: 'save__detail', text: `${parts} · ${formatSize(r.size)}` }),
+          h('div', { class: 'save__time', text: replayDate(r.name) || formatTime(r.time) })));
+      li.addEventListener('click', () => { selectIn(list, li); replaySelected = r; updateReplayButtons(); });
+      li.addEventListener('dblclick', () => playReplay(r));
+      li.addEventListener('keydown', (e) => { if (e.key === 'Enter') playReplay(r); });
+      return li;
+    }));
+    list.querySelector('.save')?.click();
+  }
+
+  function playReplay(r) {
+    if (!r) return;
+    Source.sound('start');
+    UI.closeAll();
+    Source.cmd(`ssm_replay_play ${r.name}`);
+  }
+
+  $('#replay-play').addEventListener('click', () => playReplay(replaySelected));
+  $('#replay-render').addEventListener('click', async () => {
+    const r = replaySelected;
+    if (!r) return;
+    const fps = await UI.modal({
+      title: 'Render MP4',
+      text: `The replay plays back while frames are saved to replays/${r.name}.mp4. The game is silent while it renders; the video is ready when the replay ends.`,
+      buttons: [{ label: L('#GameUI_Cancel', 'Cancel'), value: 0 }, { label: '30 fps', value: 30 }, { label: '60 fps', value: 60, primary: true }],
+    });
+    if (!fps) return;
+    UI.closeAll();
+    Source.cmd(`ssm_replay_render ${r.name} ${fps}`);
+  });
+  $('#replay-delete').addEventListener('click', async () => {
+    const r = replaySelected;
+    if (!r) return;
+    const ok = await UI.modal({
+      title: 'Delete replay',
+      text: r.mp4 ? 'Delete this replay? Its rendered MP4 is deleted too.' : 'Delete this replay?',
+      buttons: [{ label: L('#GameUI_Cancel', 'Cancel'), value: false }, { label: L('#GameUI_Delete', 'Delete'), value: true, primary: true, danger: true }],
+    });
+    if (!ok) return;
+    await Source.call('replays.delete', { name: r.name, video: true });
+    refreshReplays();
+  });
+  $('#replay-folder').addEventListener('click', () => Source.call('replays.folder', replaySelected?.mp4 ? { video: replaySelected.name } : {}));
+  UI.define('replays', { onOpen: refreshReplays });
+
   // Save
   let saveSelected = null; // null = new slot
   async function refreshSave() {
@@ -419,6 +496,7 @@
     onOpen(el) {
       refreshSplits();
       $('#skill-field').hidden = !!info.noDifficulty;
+      for (const x of $$('.cutsceneless-only')) x.hidden = !info.cutsceneless;
       UI.refreshCvars(el);
       refreshVideo();
       refreshCaptions();

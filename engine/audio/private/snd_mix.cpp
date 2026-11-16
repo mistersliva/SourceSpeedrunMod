@@ -4048,6 +4048,21 @@ bool SND_IsRecording()
 
 
 extern IVideoRecorder *g_pVideoRecorder;
+void SND_RecordBuffer( void );
+
+// SourceSpeedrunMod: the XAudio2 device does its own transfer and never fed
+// startmovie's .wav. Record the front paint buffer for [start, end) here.
+bool SND_RecordPaintBuffer( int nStartTime, int nEndTime )
+{
+	if ( !SND_IsRecording() || nEndTime <= nStartTime )
+		return false;
+	snd_vol = S_GetMasterVolume() * 256;
+	snd_p = (int *)PAINTBUFFER;
+	snd_linear_count = ( nEndTime - nStartTime ) << 1;
+	SND_RecordBuffer();
+	return true;
+}
+
 void SND_RecordBuffer( void )
 {
 	if ( IsX360() )

@@ -278,6 +278,7 @@ body.is-loading #main { opacity: 0; }
 .save:hover { background: rgba(255, 255, 255, 0.05); }
 .save.is-selected { background: rgba(255, 255, 255, 0.1); box-shadow: inset 2px 0 0 var(--accent); }
 .save__thumb { flex: 0 0 auto; width: 8.5rem; aspect-ratio: 16 / 10; border-radius: 0; background: #0a0b0d center / cover no-repeat; }
+.save--nothumb { padding: 0.55rem 0.8rem; }
 .save__thumb--new { display: grid; place-items: center; color: var(--text-muted); font-size: 1.6rem; font-weight: 300; background: rgba(255, 255, 255, 0.05); }
 .save__title { font-size: 0.98rem; }
 .save__detail { margin-top: 0.1rem; color: var(--text-muted); font-size: 0.82rem; }

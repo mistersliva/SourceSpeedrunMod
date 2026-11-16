@@ -32,6 +32,7 @@
 #include "vgui_baseui_interface.h"
 #include "con_nprint.h"
 #include "networkstringtableclient.h"
+#include <ctime>
 
 #ifdef SWDS
 #include "server.h"
@@ -54,6 +55,10 @@ static bool s_bBenchframe = false;
 static CDemoRecorder s_ClientDemoRecorder;
 CDemoRecorder *g_pClientDemoRecorder = &s_ClientDemoRecorder;
 IDemoRecorder *demorecorder = g_pClientDemoRecorder;
+
+// SourceSpeedrunMod: true while ssm_replay_record is active. A disconnect (save
+// load, level change) then only closes the current part of the replay.
+static bool s_bReplayRecording = false;
 
 static CDemoPlayer s_ClientDemoPlayer;
 CDemoPlayer *g_pClientDemoPlayer = &s_ClientDemoPlayer;
@@ -763,8 +768,7 @@ void CDemoRecorder::WriteMessages( bf_write &message )
 // Purpose: stop recording a demo
 //-----------------------------------------------------------------------------
 void CDemoRecorder::StopRecording( void )
-{
-	if ( !IsRecording() )
+{	if ( !IsRecording() )
 	{
 		return;
 	}
@@ -818,6 +822,9 @@ bool CDemoRecorder::IsRecording( void )
 // Purpose: Called when a demo file runs out, or the user starts a game
 // Output : void CDemo::StopPlayback
 //-----------------------------------------------------------------------------
+extern ConVar host_framerate;
+static void ReplayOnPlaybackStopped();
+
 void CDemoPlayer::StopPlayback( void )
 {
 	if ( !IsPlayingBack() )
@@ -878,6 +885,8 @@ void CDemoPlayer::StopPlayback( void )
 	}
 
 	g_ClientDLL->OnDemoPlaybackStop();
+
+	ReplayOnPlaybackStopped();
 }
 
 CDemoFile *CDemoPlayer::GetDemoFile( void )
@@ -2042,6 +2051,7 @@ CON_COMMAND( stop, "Finish recording demo." )
 		return;
 	}
 
+	s_bReplayRecording = false;
 	demorecorder->StopRecording();
 }
 
@@ -2373,8 +2383,187 @@ bool CDemoPlayer::OverrideView( democmdinfo_t& info )
 	return false;
 }
 
+//-----------------------------------------------------------------------------
+// SourceSpeedrunMod replays. A run is recorded as replays\<name>.dem plus
+// <name>_2.dem, <name>_3.dem, ... (the recorder starts a new file on every
+// level change or save load). These commands record such a run and play the
+// pieces back to back, optionally rendering them into one .mp4.
+//-----------------------------------------------------------------------------
+static char s_szReplayBase[MAX_OSPATH];
+static int s_nReplaySegment = 0;		// 0 = no replay playing
+static bool s_bReplayRendering = false;
+static bool s_bReplayNaturalEnd = false;
+static float s_flReplayPrevFramerate = 0.0f;
+
+static bool ReplaySegmentName( const char *pBase, int nSegment, char *pOut, int nOut )
+{
+	if ( nSegment <= 1 )
+		V_snprintf( pOut, nOut, "%s.dem", pBase );
+	else
+		V_snprintf( pOut, nOut, "%s_%d.dem", pBase, nSegment );
+	return g_pFileSystem->FileExists( pOut, "MOD" );
+}
+
+static void ReplayFinish()
+{
+	const bool bRendering = s_bReplayRendering;
+	s_nReplaySegment = 0;
+	s_bReplayRendering = false;
+	if ( bRendering )
+	{
+		// endmovie puts host_framerate back to the render rate; restore the old value after it.
+		Cbuf_AddText( va( "endmovie\nhost_framerate %g\n", s_flReplayPrevFramerate ) );
+	}
+}
+
+// Called from StopPlayback.
+static void ReplayOnPlaybackStopped()
+{
+	if ( !s_nReplaySegment )
+		return;
+	const bool bNatural = s_bReplayNaturalEnd;
+	s_bReplayNaturalEnd = false;
+	if ( !bNatural )
+	{
+		ReplayFinish();
+		return;
+	}
+	char szNext[MAX_OSPATH];
+	if ( ReplaySegmentName( s_szReplayBase, s_nReplaySegment + 1, szNext, sizeof( szNext ) ) )
+	{
+		++s_nReplaySegment;
+		Cbuf_AddText( va( "playdemo \"%s\"\n", szNext ) );
+	}
+	else
+	{
+		ReplayFinish();
+	}
+}
+
+static bool ReplayBaseFromArg( const char *pArg, char *pOut, int nOut )
+{
+	char szName[MAX_OSPATH];
+	V_StripExtension( pArg, szName, sizeof( szName ) );
+	if ( !COM_IsValidPath( szName ) || V_strstr( szName, ".." ) )
+		return false;
+	if ( V_strnicmp( szName, "replays/", 8 ) && V_strnicmp( szName, "replays\\", 8 ) )
+		V_snprintf( pOut, nOut, "replays/%s", szName );
+	else
+		V_strncpy( pOut, szName, nOut );
+	return true;
+}
+
+static void ReplayStart( const char *pArg, bool bRender, float flFps )
+{
+	char szBase[MAX_OSPATH], szFirst[MAX_OSPATH];
+	if ( !ReplayBaseFromArg( pArg, szBase, sizeof( szBase ) ) || !ReplaySegmentName( szBase, 1, szFirst, sizeof( szFirst ) ) )
+	{
+		ConMsg( "Replay %s not found.\n", pArg );
+		return;
+	}
+	if ( s_nReplaySegment )
+	{
+		// Replace the replay that is playing.
+		s_nReplaySegment = 0;
+		if ( s_bReplayRendering )
+			ReplayFinish();
+	}
+	if ( demoplayer->IsPlayingBack() )
+		demoplayer->StopPlayback();
+	// Watching a replay leaves the game, which ends the run being recorded.
+	s_bReplayRecording = false;
+	if ( demorecorder->IsRecording() )
+		demorecorder->StopRecording();
+
+	V_strcpy_safe( s_szReplayBase, szBase );
+	s_nReplaySegment = 1;
+	s_bReplayNaturalEnd = false;
+	s_bReplayRendering = bRender;
+	if ( bRender )
+	{
+		s_flReplayPrevFramerate = host_framerate.GetFloat();
+		host_framerate.SetValue( clamp( flFps, 24.0f, 240.0f ) );	// > 1 means frames per second
+		Cbuf_AddText( va( "startmovie \"%s\" mp4\n", szBase ) );
+	}
+	Cbuf_AddText( va( "playdemo \"%s\"\n", szFirst ) );
+}
+
+bool SSM_ReplayKeepRecordingOnDisconnect()
+{
+	if ( !s_bReplayRecording || demoplayer->IsPlayingBack() )
+		return false;
+	if ( !s_ClientDemoRecorder.IsRecording() )
+	{
+		s_bReplayRecording = false;
+		return false;
+	}
+	s_ClientDemoRecorder.EndReplayPart();
+	return true;
+}
+
+CON_COMMAND_F( ssm_replay_record, "Start recording a replay into replays\\ (continues across level changes and loads).", FCVAR_DONTRECORD )
+{
+	if ( demorecorder->IsRecording() || demoplayer->IsPlayingBack() || !cl.IsConnected() )
+		return;
+	g_pFileSystem->CreateDirHierarchy( "replays", "DEFAULT_WRITE_PATH" );
+
+	time_t now = time( nullptr );
+	tm local;
+	localtime_s( &local, &now );
+	char szName[MAX_OSPATH];
+	if ( args.ArgC() > 1 && args[1][0] )
+		V_sprintf_safe( szName, "replays/%s", args[1] );
+	else
+		V_sprintf_safe( szName, "replays/%04d-%02d-%02d_%02d-%02d-%02d_%s", local.tm_year + 1900, local.tm_mon + 1, local.tm_mday,
+			local.tm_hour, local.tm_min, local.tm_sec, cl.m_szLevelBaseName[0] ? cl.m_szLevelBaseName : "run" );
+	for ( char *p = szName + 8; *p; ++p )	// after "replays/"
+	{
+		if ( !V_isalnum( *p ) && *p != '-' && *p != '_' )
+			*p = '_';
+	}
+	demorecorder->StartRecording( szName, false );
+	s_bReplayRecording = true;
+	ConMsg( "Recording replay %s\n", szName );
+}
+
+CON_COMMAND_F( ssm_replay_stop, "Stop recording the replay.", FCVAR_DONTRECORD )
+{
+	s_bReplayRecording = false;
+	if ( demorecorder->IsRecording() )
+		demorecorder->StopRecording();
+}
+
+CON_COMMAND_F( ssm_replay_play, "Play a replay with all of its parts: ssm_replay_play <name>", FCVAR_DONTRECORD )
+{
+	if ( args.ArgC() < 2 )
+	{
+		ConMsg( "ssm_replay_play <name>\n" );
+		return;
+	}
+	ReplayStart( args[1], false, 0 );
+}
+
+CON_COMMAND_F( ssm_replay_render, "Render a replay into replays\\<name>.mp4: ssm_replay_render <name> [fps]", FCVAR_DONTRECORD )
+{
+	if ( args.ArgC() < 2 )
+	{
+		ConMsg( "ssm_replay_render <name> [fps]\n" );
+		return;
+	}
+	char szFFmpeg[MAX_PATH];
+	extern bool CL_FFmpegPath( char *pOut, int nOut );
+	if ( !CL_FFmpegPath( szFFmpeg, sizeof( szFFmpeg ) ) )
+	{
+		ConMsg( "bin\\ffmpeg.exe is missing. Install it from the launcher (Settings).\n" );
+		return;
+	}
+	ReplayStart( args[1], true, args.ArgC() > 2 ? Q_atof( args[2] ) : 60.0f );
+}
+
 void CDemoPlayer::OnStopCommand()
 {
+	if ( s_nReplaySegment )
+		s_bReplayNaturalEnd = true;
 	cl.Disconnect( "Demo stopped", true);
 }
 

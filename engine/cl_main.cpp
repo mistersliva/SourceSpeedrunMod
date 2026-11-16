@@ -72,6 +72,8 @@
 #endif
 
 #include "igame.h"
+#include "winlite.h"
+#undef CreateEvent
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -1392,6 +1394,154 @@ void CL_TakeSnapshotAndSwap()
 }
 
 static float s_flPreviousHostFramerate = 0;
+
+//-----------------------------------------------------------------------------
+// SourceSpeedrunMod: "startmovie <name> mp4" pipes raw frames into ffmpeg
+// (bin\ffmpeg.exe next to the game exe) and, when the movie ends, muxes them
+// with the .wav the sound system wrote into <gamedir>\<name>.mp4.
+//-----------------------------------------------------------------------------
+static ConVar ssm_movie_crf( "ssm_movie_crf", "18", FCVAR_ARCHIVE, "Quality of mp4 movies (x264 CRF, lower = better, 0-51).", true, 0, true, 51 );
+static ConVar ssm_movie_preset( "ssm_movie_preset", "veryfast", FCVAR_ARCHIVE, "x264 preset for mp4 movies." );
+
+static ConVar ssm_movie_keeptemp( "ssm_movie_keeptemp", "0", 0, "Keep the separate video and .wav files of an mp4 movie." );
+
+static HANDLE s_hFFmpegProcess = nullptr;
+static HANDLE s_hFFmpegStdin = nullptr;
+static char s_szFFmpegVideo[MAX_PATH];
+static char s_szFFmpegWav[MAX_PATH];
+static char s_szFFmpegOut[MAX_PATH];
+
+bool CL_FFmpegPath( char *pOut, int nOut )
+{
+	char szExe[MAX_PATH];
+	if ( !GetModuleFileNameA( nullptr, szExe, sizeof( szExe ) ) )
+		return false;
+	V_StripFilename( szExe );
+	V_snprintf( pOut, nOut, "%s\\bin\\ffmpeg.exe", szExe );
+	return GetFileAttributesA( pOut ) != INVALID_FILE_ATTRIBUTES;
+}
+
+static HANDLE CL_FFmpegSpawn( const char *pArgs, HANDLE hStdin )
+{
+	char szExe[MAX_PATH];
+	if ( !CL_FFmpegPath( szExe, sizeof( szExe ) ) )
+		return nullptr;
+
+	char szCmd[2048];
+	V_sprintf_safe( szCmd, "\"%s\" %s", szExe, pArgs );
+
+	STARTUPINFOA si = {};
+	si.cb = sizeof( si );
+	if ( hStdin )
+	{
+		si.dwFlags = STARTF_USESTDHANDLES;
+		si.hStdInput = hStdin;
+		si.hStdOutput = nullptr;
+		si.hStdError = nullptr;
+	}
+	PROCESS_INFORMATION pi = {};
+	if ( !CreateProcessA( nullptr, szCmd, nullptr, nullptr, hStdin ? TRUE : FALSE, CREATE_NO_WINDOW | BELOW_NORMAL_PRIORITY_CLASS, nullptr, nullptr, &si, &pi ) )
+		return nullptr;
+	CloseHandle( pi.hThread );
+	return pi.hProcess;
+}
+
+static bool CL_FFmpegStart( const char *pName, int nWidth, int nHeight, float flFrameRate )
+{
+	V_sprintf_safe( s_szFFmpegOut, "%s%c%s", com_gamedir, CORRECT_PATH_SEPARATOR, pName );
+	V_FixSlashes( s_szFFmpegOut );
+	V_StripExtension( s_szFFmpegOut, s_szFFmpegVideo, sizeof( s_szFFmpegVideo ) );
+	V_strcpy_safe( s_szFFmpegWav, s_szFFmpegVideo );
+	V_strcat_safe( s_szFFmpegWav, ".WAV" );
+	V_strcat_safe( s_szFFmpegVideo, ".video.mp4" );
+	V_DefaultExtension( s_szFFmpegOut, ".mp4" );
+
+	SECURITY_ATTRIBUTES sa = { sizeof( sa ), nullptr, TRUE };
+	HANDLE hRead = nullptr, hWrite = nullptr;
+	if ( !CreatePipe( &hRead, &hWrite, &sa, 32 * 1024 * 1024 ) )
+		return false;
+	SetHandleInformation( hWrite, HANDLE_FLAG_INHERIT, 0 );
+
+	char szArgs[1600];
+	V_sprintf_safe( szArgs,
+		"-hide_banner -loglevel error -y -f rawvideo -pix_fmt bgr24 -s %dx%d -framerate %g -i - "
+		"-c:v libx264 -preset %s -crf %d -pix_fmt yuv420p \"%s\"",
+		nWidth, nHeight, flFrameRate, ssm_movie_preset.GetString(), ssm_movie_crf.GetInt(), s_szFFmpegVideo );
+	s_hFFmpegProcess = CL_FFmpegSpawn( szArgs, hRead );
+	CloseHandle( hRead );
+	if ( !s_hFFmpegProcess )
+	{
+		CloseHandle( hWrite );
+		return false;
+	}
+	s_hFFmpegStdin = hWrite;
+	return true;
+}
+
+void CL_FFmpegFrame( const void *pData, int nBytes )
+{
+	if ( !s_hFFmpegStdin )
+		return;
+	const char *p = static_cast<const char *>( pData );
+	while ( nBytes > 0 )
+	{
+		DWORD nWritten = 0;
+		if ( !WriteFile( s_hFFmpegStdin, p, (DWORD)nBytes, &nWritten, nullptr ) || nWritten == 0 )
+		{
+			Warning( "ffmpeg stopped accepting frames, ending movie.\n" );
+			CloseHandle( s_hFFmpegStdin );
+			s_hFFmpegStdin = nullptr;
+			Cbuf_AddText( "endmovie\n" );
+			return;
+		}
+		p += nWritten;
+		nBytes -= (int)nWritten;
+	}
+}
+
+// Called after the .wav was finalized.
+static void CL_FFmpegFinish()
+{
+	if ( s_hFFmpegStdin )
+	{
+		CloseHandle( s_hFFmpegStdin );
+		s_hFFmpegStdin = nullptr;
+	}
+	if ( !s_hFFmpegProcess )
+		return;
+	WaitForSingleObject( s_hFFmpegProcess, 5 * 60 * 1000 );
+	CloseHandle( s_hFFmpegProcess );
+	s_hFFmpegProcess = nullptr;
+
+	char szArgs[1600];
+	bool bWav = GetFileAttributesA( s_szFFmpegWav ) != INVALID_FILE_ATTRIBUTES;
+	if ( bWav )
+		V_sprintf_safe( szArgs, "-hide_banner -loglevel error -y -i \"%s\" -i \"%s\" -c:v copy -c:a aac -b:a 192k -shortest -movflags +faststart \"%s\"",
+			s_szFFmpegVideo, s_szFFmpegWav, s_szFFmpegOut );
+	else
+		V_sprintf_safe( szArgs, "-hide_banner -loglevel error -y -i \"%s\" -c copy -movflags +faststart \"%s\"", s_szFFmpegVideo, s_szFFmpegOut );
+
+	HANDLE hMux = CL_FFmpegSpawn( szArgs, nullptr );
+	if ( hMux )
+	{
+		WaitForSingleObject( hMux, 5 * 60 * 1000 );
+		DWORD code = 1;
+		GetExitCodeProcess( hMux, &code );
+		CloseHandle( hMux );
+		if ( code == 0 )
+		{
+			if ( !ssm_movie_keeptemp.GetBool() )
+			{
+				DeleteFileA( s_szFFmpegVideo );
+				if ( bWav )
+					DeleteFileA( s_szFFmpegWav );
+			}
+			ConMsg( "Movie written to %s (%d frames)\n", s_szFFmpegOut, cl_movieinfo.movieframe );
+			return;
+		}
+	}
+	Warning( "Could not mux the movie; the video is in %s\n", s_szFFmpegVideo );
+}
 ConVar cl_simulate_no_quicktime( "cl_simulate_no_quicktime", "0", FCVAR_HIDDEN );
 void CL_StartMovie( const char *filename, int flags, int nWidth, int nHeight, float flFrameRate, int nJpegQuality, VideoSystem_t videoSystem )
 {
@@ -1407,7 +1557,13 @@ void CL_StartMovie( const char *filename, int flags, int nWidth, int nHeight, fl
 	cl_movieinfo.jpeg_quality = nJpegQuality;
 
 	bool bSuccess = true;
-	if ( cl_movieinfo.DoVideo() || cl_movieinfo.DoVideoSound() )
+	if ( cl_movieinfo.DoFFmpeg() )
+	{
+		bSuccess = CL_FFmpegStart( filename, nWidth, nHeight, flFrameRate );
+		if ( !bSuccess )
+			Warning( "Could not start bin\\ffmpeg.exe.\n" );
+	}
+	else if ( cl_movieinfo.DoVideo() || cl_movieinfo.DoVideoSound() )
 	{
 		// MGP - switched over to using valve video services from avi
 		if ( videoSystem == VideoSystem::NONE && g_pVideo )
@@ -1504,6 +1660,9 @@ void CL_EndMovie()
 	s_flPreviousHostFramerate = 0.0f;
 
 	SND_MovieEnd();
+
+	if ( cl_movieinfo.DoFFmpeg() )
+		CL_FFmpegFinish();
 
 	if ( g_pVideoRecorder && ( cl_movieinfo.DoVideo() || cl_movieinfo.DoVideoSound() ) )
 	{
@@ -1609,6 +1768,10 @@ CON_COMMAND_F( startmovie, "Start recording movie frames.", FCVAR_DONTRECORD )
 				return;
 			}
 #endif
+			if ( V_strieq( args[ i ], "mp4" ) )
+			{
+				flags |= MovieInfo_t::FMOVIE_FFMPEG | MovieInfo_t::FMOVIE_WAV;
+			}
 			if ( V_strieq( args[ i ], "raw" ) )
 			{
 				flags |= MovieInfo_t::FMOVIE_TGA | MovieInfo_t::FMOVIE_WAV;
