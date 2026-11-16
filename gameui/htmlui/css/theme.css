@@ -360,3 +360,22 @@ body.is-quickload #quickload { display: block; }
 
 .field .field-input { width: 15rem; justify-self: end; height: 2.1rem; padding: 0 0.6rem; font-size: 0.9rem; }
 
+
+/* Crosshair preview (Settings -> HUD) */
+.crosshair-preview { display: grid; place-items: center; height: 5.5rem; margin: 0.2rem 0 0.4rem; background: linear-gradient(135deg, #3a3f45, #6b6f66 55%, #2b2e33); line-height: 0; }
+
+/* Demo / replay playback bar (bottom of the menu while a demo plays) */
+.demobar { position: fixed; left: 50%; bottom: 2.2rem; transform: translateX(-50%); z-index: 40; width: min(64rem, calc(100vw - 4rem)); padding: 0.6rem 0.8rem; background: rgba(28, 30, 34, 0.86); }
+.demobar__row { display: flex; align-items: center; gap: 0.5rem; }
+.demobar__btn { flex: 0 0 auto; min-width: 2.4rem; height: 2rem; padding: 0 0.7rem; border: 0; background: rgba(255, 255, 255, 0.08); color: var(--text); font-size: 0.8rem; letter-spacing: 0.06em; text-transform: uppercase; }
+.demobar__btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.16); }
+.demobar__btn:disabled { opacity: 0.35; }
+.demobar__btn--main { min-width: 5rem; background: var(--accent); color: var(--accent-contrast); }
+.demobar__btn--main:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
+.demobar__time { flex: 0 0 auto; min-width: 7.5rem; text-align: center; color: var(--text-muted); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+.demobar__seek { flex: 1; min-width: 6rem; height: 4px; margin: 0 0.4rem; appearance: none; background: linear-gradient(90deg, var(--accent) var(--fill, 0%), rgba(255, 255, 255, 0.18) var(--fill, 0%)); }
+.demobar__seek::-webkit-slider-thumb { appearance: none; width: 0.8rem; height: 0.8rem; background: #fff; border: 0; border-radius: 0; }
+.demobar__parts { display: flex; align-items: center; gap: 0.3rem; color: var(--text-muted); font-size: 0.8rem; white-space: nowrap; }
+.demobar__speed button { padding: 0.35rem 0.55rem; }
+body.demo-playing #quick, body.demo-playing [data-open="savegame"] { display: none; }
+.crosshair-preview svg { transform: scale(2); }

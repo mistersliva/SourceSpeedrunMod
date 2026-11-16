@@ -839,6 +839,31 @@ bool Api_ReplaysList( const json::Value &, json::Writer &out, std::string & )
 	return true;
 }
 
+// Demo / replay playback position for the menu's playback bar.
+bool Api_DemoState( const json::Value &, json::Writer &out, std::string & )
+{
+	out.BeginObject();
+	const bool playing = engine->IsPlayingDemo();
+	out.Prop( "playing", playing );
+	if ( playing )
+	{
+		out.Prop( "loading", engine->IsLoadingDemo() );
+		out.Prop( "tick", engine->GetDemoPlaybackTick() );
+		out.Prop( "total", engine->GetDemoPlaybackTotalTicks() );
+		out.Prop( "timescale", static_cast<double>( engine->GetDemoPlaybackTimeScale() ) );
+		int part = 0, parts = 0, rendering = 0, paused = 0;
+		static ConVarRef info( "ssm_demo_info" );
+		if ( info.IsValid() )
+			sscanf( info.GetString(), "%d %d %d %d", &part, &parts, &rendering, &paused );
+		out.Prop( "part", part );
+		out.Prop( "parts", parts );
+		out.Prop( "rendering", rendering != 0 );
+		out.Prop( "paused", paused != 0 );
+	}
+	out.EndObject();
+	return true;
+}
+
 bool Api_ReplaysDelete( const json::Value &args, json::Writer &out, std::string &error )
 {
 	const std::string name = args["name"].AsString();
@@ -857,6 +882,8 @@ bool Api_ReplaysDelete( const json::Value &args, json::Writer &out, std::string 
 			break;
 		g_pFullFileSystem->RemoveFile( path, "MOD" );
 	}
+	V_sprintf_safe( path, "%s/%s.txt", kReplaysDir, name.c_str() );
+	g_pFullFileSystem->RemoveFile( path, "MOD" );
 	if ( args["video"].AsBool() )
 	{
 		V_sprintf_safe( path, "%s/%s.mp4", kReplaysDir, name.c_str() );
@@ -1518,6 +1545,7 @@ constexpr Method kMethods[] = {
 	{ "saves.delete", Api_SavesDelete },
 	{ "replays.list", Api_ReplaysList },
 	{ "replays.delete", Api_ReplaysDelete },
+	{ "demo.state", Api_DemoState },
 	{ "replays.folder", Api_ReplaysFolder },
 	{ "video.get", Api_VideoGet },
 	{ "video.set", Api_VideoSet },

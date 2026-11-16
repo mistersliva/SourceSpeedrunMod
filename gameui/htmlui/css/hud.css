@@ -41,7 +41,10 @@ html, body {
 [hidden] { display: none !important; }
 
 body { transition: opacity 0.4s; }
-body.is-hidden, body.hide-all { opacity: 0; }
+body.is-hidden { opacity: 0; }
+/* Scripted scenes and the suitless start hide the game HUD; the speedrun
+   timer, speed and splits stay. */
+body.hide-all .vitals, body.hide-all .ammo, body.hide-all .squad, body.hide-all #history, body.hide-all #selection, body.hide-all #damage { opacity: 0; }
 #hud { opacity: var(--hud-opacity, 1); }
 body.is-dead .vitals, body.is-dead .ammo, body.is-dead .squad, body.is-dead #history, body.is-dead .runbox { opacity: 0; transition: opacity 1.2s; }
 
@@ -107,7 +110,7 @@ body.hide-health .vitals, body.no-vitals .vitals { opacity: 0; }
 .tag { padding: 0.08rem 0.45rem; background: rgba(255, 255, 255, 0.1); color: var(--hud-muted); font-size: 0.66rem; letter-spacing: 0.12em; text-transform: uppercase; }
 
 body.no-timer .runbox__timer, body.no-speed .runbox__speed, body.no-mode .runbox__tags { display: none; }
-body.no-timer.no-speed.no-mode .runbox, body.hide-health .runbox, body.is-dead .runbox { opacity: 0; }
+body.no-timer.no-speed.no-mode .runbox, body.is-dead .runbox { opacity: 0; }
 body.no-panels .runbox { background: none; text-shadow: var(--shadow); }
 body.no-panels .tag { background: rgba(0, 0, 0, 0.35); }
 
@@ -276,3 +279,7 @@ body.is-dead .splits { opacity: 1; }
 .is-behind-lose { color: #ff4f3f; }
 .is-gold { color: #ffd24a; }
 .is-pb { color: #4fb8ff; }
+
+/* ------------------------------------------------------------- Crosshair */
+#crosshair { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%) scale(var(--scale, 1)); line-height: 0; pointer-events: none; }
+body.no-crosshair #crosshair, body.hide-all #crosshair, body.is-dead #crosshair { display: none; }

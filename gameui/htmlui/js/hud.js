@@ -60,6 +60,8 @@
     // Engine glass only behind the panel when it is actually drawn.
     $('runbox').classList.toggle('glass', Prefs.get('hud.panels') && Prefs.get('hud.speedPos') !== 'center');
     $('splits').classList.toggle('glass', !!Prefs.get('hud.panels'));
+    b.toggle('no-crosshair', !Prefs.get('hud.crosshair'));
+    $('crosshair').innerHTML = Crosshair.svg(Crosshair.fromPrefs(Prefs));
   }
   applyPrefs();
   Prefs.onChange(applyPrefs);

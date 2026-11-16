@@ -1837,9 +1837,12 @@ void CDemoPlayer::WriteTimeDemoResults( void )
 }
 
 
+void SSM_DemoPausedChanged( bool bPaused );
+
 void CDemoPlayer::PausePlayback( float seconds  )
 {
 	m_bPlaybackPaused = true;
+	SSM_DemoPausedChanged( true );
 	
 	if ( seconds > 0.0f )
 	{
@@ -1855,6 +1858,7 @@ void CDemoPlayer::PausePlayback( float seconds  )
 void CDemoPlayer::ResumePlayback()
 {
 	m_bPlaybackPaused = false;
+	SSM_DemoPausedChanged( false );
 	m_flAutoResumeTime = 0.0;
 }
 
@@ -2391,7 +2395,25 @@ bool CDemoPlayer::OverrideView( democmdinfo_t& info )
 //-----------------------------------------------------------------------------
 static char s_szReplayBase[MAX_OSPATH];
 static int s_nReplaySegment = 0;		// 0 = no replay playing
+static int s_nReplayParts = 0;
+static int s_nReplayRestoreCutsceneless = -1;	// ssm_cutsceneless to put back after playback
+
+// Read by the menu's playback bar: "<part> <parts> <rendering 0/1> <paused 0/1>".
+static ConVar ssm_demo_info( "ssm_demo_info", "", FCVAR_HIDDEN | FCVAR_DONTRECORD, "" );
+static bool s_bDemoPaused = false;
 static bool s_bReplayRendering = false;
+
+static void PublishDemoInfo()
+{
+	ssm_demo_info.SetValue( va( "%d %d %d %d", s_nReplaySegment, s_nReplaySegment ? s_nReplayParts : 0, (int)s_bReplayRendering, (int)s_bDemoPaused ) );
+}
+
+void SSM_DemoPausedChanged( bool bPaused )
+{
+	s_bDemoPaused = bPaused;
+	PublishDemoInfo();
+}
+
 static bool s_bReplayNaturalEnd = false;
 static float s_flReplayPrevFramerate = 0.0f;
 
@@ -2409,6 +2431,14 @@ static void ReplayFinish()
 	const bool bRendering = s_bReplayRendering;
 	s_nReplaySegment = 0;
 	s_bReplayRendering = false;
+	PublishDemoInfo();
+	if ( s_nReplayRestoreCutsceneless >= 0 )
+	{
+		static ConVarRef ssm_cutsceneless( "ssm_cutsceneless" );
+		if ( ssm_cutsceneless.IsValid() )
+			ssm_cutsceneless.SetValue( s_nReplayRestoreCutsceneless );
+		s_nReplayRestoreCutsceneless = -1;
+	}
 	if ( bRendering )
 	{
 		// endmovie puts host_framerate back to the render rate; restore the old value after it.
@@ -2416,22 +2446,32 @@ static void ReplayFinish()
 	}
 }
 
+static int s_nReplayJumpTo = 0;	// ssm_replay_part: part to play after the current one stops
+
 // Called from StopPlayback.
 static void ReplayOnPlaybackStopped()
 {
+	s_bDemoPaused = false;
 	if ( !s_nReplaySegment )
+	{
+		PublishDemoInfo();
 		return;
+	}
 	const bool bNatural = s_bReplayNaturalEnd;
+	const int nJump = s_nReplayJumpTo;
 	s_bReplayNaturalEnd = false;
-	if ( !bNatural )
+	s_nReplayJumpTo = 0;
+	if ( !bNatural && !nJump )
 	{
 		ReplayFinish();
 		return;
 	}
 	char szNext[MAX_OSPATH];
-	if ( ReplaySegmentName( s_szReplayBase, s_nReplaySegment + 1, szNext, sizeof( szNext ) ) )
+	const int nNext = nJump ? nJump : s_nReplaySegment + 1;
+	if ( ReplaySegmentName( s_szReplayBase, nNext, szNext, sizeof( szNext ) ) )
 	{
-		++s_nReplaySegment;
+		s_nReplaySegment = nNext;
+		PublishDemoInfo();
 		Cbuf_AddText( va( "playdemo \"%s\"\n", szNext ) );
 	}
 	else
@@ -2475,7 +2515,29 @@ static void ReplayStart( const char *pArg, bool bRender, float flFps )
 	if ( demorecorder->IsRecording() )
 		demorecorder->StopRecording();
 
+	// Play on the map set the replay was recorded with (replays/<name>.txt).
+	{
+		static ConVarRef ssm_cutsceneless( "ssm_cutsceneless" );
+		char szInfo[MAX_OSPATH];
+		V_sprintf_safe( szInfo, "%s.txt", szBase );
+		CUtlBuffer buf( static_cast<intp>( 0 ), 0, CUtlBuffer::TEXT_BUFFER );
+		int nRecorded = -1;
+		if ( g_pFileSystem->ReadFile( szInfo, "MOD", buf ) )
+		{
+			buf.PutChar( 0 );
+			sscanf( static_cast<const char *>( buf.Base() ), "cutsceneless %d", &nRecorded );
+		}
+		if ( ssm_cutsceneless.IsValid() && nRecorded >= 0 && nRecorded != ssm_cutsceneless.GetInt() )
+		{
+			s_nReplayRestoreCutsceneless = ssm_cutsceneless.GetInt();
+			ssm_cutsceneless.SetValue( nRecorded );
+		}
+	}
+
 	V_strcpy_safe( s_szReplayBase, szBase );
+	s_nReplayParts = 1;
+	for ( char szPart[MAX_OSPATH]; ReplaySegmentName( szBase, s_nReplayParts + 1, szPart, sizeof( szPart ) ); )
+		++s_nReplayParts;
 	s_nReplaySegment = 1;
 	s_bReplayNaturalEnd = false;
 	s_bReplayRendering = bRender;
@@ -2485,7 +2547,20 @@ static void ReplayStart( const char *pArg, bool bRender, float flFps )
 		host_framerate.SetValue( clamp( flFps, 24.0f, 240.0f ) );	// > 1 means frames per second
 		Cbuf_AddText( va( "startmovie \"%s\" mp4\n", szBase ) );
 	}
+	PublishDemoInfo();
 	Cbuf_AddText( va( "playdemo \"%s\"\n", szFirst ) );
+}
+
+CON_COMMAND_F( ssm_replay_part, "Jump to a part of the replay that is playing: ssm_replay_part <n>", FCVAR_DONTRECORD )
+{
+	if ( args.ArgC() < 2 || !s_nReplaySegment || s_bReplayRendering )
+		return;
+	const int n = clamp( Q_atoi( args[1] ), 1, s_nReplayParts );
+	s_nReplayJumpTo = n;
+	if ( demoplayer->IsPlayingBack() )
+		demoplayer->StopPlayback();
+	else
+		ReplayOnPlaybackStopped();
 }
 
 bool SSM_ReplayKeepRecordingOnDisconnect()
@@ -2523,6 +2598,16 @@ CON_COMMAND_F( ssm_replay_record, "Start recording a replay into replays\\ (cont
 	}
 	demorecorder->StartRecording( szName, false );
 	s_bReplayRecording = true;
+
+	// Which map set the run used: replays must play back on the same maps.
+	static ConVarRef ssm_cutsceneless( "ssm_cutsceneless" );
+	char szInfo[MAX_OSPATH];
+	V_sprintf_safe( szInfo, "%s.txt", szName );
+	if ( FileHandle_t f = g_pFileSystem->Open( szInfo, "wt", "DEFAULT_WRITE_PATH" ) )
+	{
+		g_pFileSystem->FPrintf( f, "cutsceneless %d\n", ssm_cutsceneless.IsValid() ? ssm_cutsceneless.GetInt() : 0 );
+		g_pFileSystem->Close( f );
+	}
 	ConMsg( "Recording replay %s\n", szName );
 }
 

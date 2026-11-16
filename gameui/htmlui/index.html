@@ -62,6 +62,26 @@
     </div>
   </main>
 
+  <!-- ===================================================== Demo playback bar -->
+  <div class="demobar glass" id="demobar" hidden>
+    <div class="demobar__row">
+      <button class="demobar__btn" id="demo-back" title="Back 10 s">−10s</button>
+      <button class="demobar__btn demobar__btn--main" id="demo-toggle" title="Play / pause">Pause</button>
+      <button class="demobar__btn" id="demo-fwd" title="Forward 10 s">+10s</button>
+      <span class="demobar__time" id="demo-time">0:00 / 0:00</span>
+      <input type="range" class="demobar__seek" id="demo-seek" min="0" max="1" step="1" value="0">
+      <span class="demobar__parts" id="demo-parts" hidden>
+        <button class="demobar__btn" id="demo-prev" title="Previous part">‹</button>
+        <span id="demo-part">1 / 1</span>
+        <button class="demobar__btn" id="demo-next" title="Next part">›</button>
+      </span>
+      <span class="segmented demobar__speed" id="demo-speed">
+        <button data-scale="0.25">¼×</button><button data-scale="0.5">½×</button><button data-scale="1" class="is-active">1×</button><button data-scale="2">2×</button><button data-scale="4">4×</button>
+      </span>
+      <button class="demobar__btn" id="demo-stop" title="Stop">Stop</button>
+    </div>
+  </div>
+
   <!-- ===================================================== New game -->
   <section class="layer layer--wide" data-layer="newgame" hidden>
     <div class="panel">
@@ -218,6 +238,20 @@
           <label class="field"><span>Movement mode</span><span class="switch"><input type="checkbox" data-pref="hud.mode"><i></i></span></label>
           <label class="field"><span>Health and armor</span><span class="switch"><input type="checkbox" data-pref="hud.vitals"><i></i></span></label>
           <label class="field"><span>Weapon and ammo</span><span class="switch"><input type="checkbox" data-pref="hud.ammo"><i></i></span></label>
+          <h3 class="form-section">Crosshair</h3>
+          <div class="crosshair-preview" id="crosshair-preview" aria-hidden="true"></div>
+          <label class="field"><span>Show crosshair</span><span class="switch"><input type="checkbox" data-pref="hud.crosshair"><i></i></span></label>
+          <label class="field"><span>Style</span><select data-pref="hud.chStyle" data-crosshair-styles></select></label>
+          <label class="field"><span>Colour</span><select data-pref="hud.chColor" data-crosshair-colors></select></label>
+          <label class="field"><span>Length</span>
+            <span class="range"><input type="range" id="ch-size" min="1" max="20" step="1" data-pref="hud.chSize" data-format="int"><output for="ch-size"></output></span></label>
+          <label class="field"><span>Gap</span>
+            <span class="range"><input type="range" id="ch-gap" min="0" max="16" step="1" data-pref="hud.chGap" data-format="int"><output for="ch-gap"></output></span></label>
+          <label class="field"><span>Thickness</span>
+            <span class="range"><input type="range" id="ch-thick" min="1" max="6" step="1" data-pref="hud.chThickness" data-format="int"><output for="ch-thick"></output></span></label>
+          <label class="field"><span>Outline</span><span class="switch"><input type="checkbox" data-pref="hud.chOutline"><i></i></span></label>
+          <label class="field"><span>Opacity</span>
+            <span class="range"><input type="range" id="ch-opacity" min="0.2" max="1" step="0.05" data-pref="hud.chOpacity" data-format="percent"><output for="ch-opacity"></output></span></label>
           <hr class="form-rule">
           <label class="field"><span>Accent colour</span><select data-pref="hud.accent" data-accents></select></label>
           <label class="field"><span>Panel backgrounds</span><span class="switch"><input type="checkbox" data-pref="hud.panels"><i></i></span></label>
@@ -315,7 +349,6 @@
           <label class="field" id="skill-field"><span data-loc="#GameUI_Difficulty">Difficulty</span>
             <select data-cvar="skill"><option value="1" data-loc="#GameUI_Easy">Easy</option><option value="2" data-loc="#GameUI_Medium">Normal</option><option value="3" data-loc="#GameUI_Hard">Hard</option></select></label>
           <label class="field"><span data-loc="#GameUI_AutoAim">Aim assistance</span><span class="switch"><input type="checkbox" data-cvar="sk_autoaim_mode"><i></i></span></label>
-          <label class="field"><span data-loc="#GameUI_Crosshair">Crosshair</span><span class="switch"><input type="checkbox" data-cvar="crosshair"><i></i></span></label>
           <label class="field"><span>Quick info (health / ammo)</span><span class="switch"><input type="checkbox" data-cvar="hud_quickinfo"><i></i></span></label>
           <label class="field"><span>View bob</span><span class="switch"><input type="checkbox" data-cvar="cl_viewbob_enabled"><i></i></span></label>
           <label class="field"><span>Block the Windows key in game</span><span class="switch"><input type="checkbox" data-cvar="sys_block_windows_key"><i></i></span></label>
@@ -370,6 +403,7 @@
   <script src="js/sounds.js"></script>
   <script src="js/source.js"></script>
   <script src="js/prefs.js"></script>
+  <script src="js/crosshair.js"></script>
   <script src="js/ui.js"></script>
   <script src="js/app.js"></script>
 </body>

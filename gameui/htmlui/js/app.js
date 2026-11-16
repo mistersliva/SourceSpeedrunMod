@@ -298,6 +298,57 @@
   $('#replay-folder').addEventListener('click', () => Source.call('replays.folder', replaySelected?.mp4 ? { video: replaySelected.name } : {}));
   UI.define('replays', { onOpen: refreshReplays });
 
+  // Demo / replay playback bar: shown at the bottom of the menu while a demo
+  // plays (Esc during playback opens the menu; the demo keeps running).
+  const DEMO_TICK = 0.015; // Half-Life 2 runs at 66.67 ticks per second
+  let demo = null;
+  let seeking = false;
+  const demoClock = (ticks) => {
+    const s = Math.max(0, Math.round(ticks * DEMO_TICK));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  };
+
+  function renderDemo(d) {
+    demo = d;
+    const bar = $('#demobar');
+    const show = !!d.playing && !d.rendering;
+    if (bar.hidden !== !show) bar.hidden = !show;
+    document.body.classList.toggle('demo-playing', show);
+    if (!show) return;
+    const total = Math.max(1, d.total || 1);
+    const seek = $('#demo-seek');
+    seek.max = String(total);
+    if (!seeking) seek.value = String(Math.min(d.tick, total));
+    seek.style.setProperty('--fill', `${(Math.min(d.tick, total) / total) * 100}%`);
+    $('#demo-time').textContent = `${demoClock(seeking ? Number(seek.value) : d.tick)} / ${demoClock(total)}`;
+    $('#demo-toggle').textContent = d.paused ? 'Play' : 'Pause';
+    $('#demo-parts').hidden = !(d.parts > 1);
+    $('#demo-part').textContent = `Part ${d.part} / ${d.parts}`;
+    $('#demo-prev').disabled = d.part <= 1;
+    $('#demo-next').disabled = d.part >= d.parts;
+    for (const b of $$('#demo-speed button')) b.classList.toggle('is-active', Math.abs(Number(b.dataset.scale) - (d.timescale || 1)) < 0.01);
+  }
+
+  async function pollDemo() {
+    try { renderDemo(await Source.call('demo.state')); } catch {}
+  }
+  setInterval(() => { if (!document.hidden) pollDemo(); }, 250);
+
+  const demoCmd = (c) => { Source.cmd(c); setTimeout(pollDemo, 80); };
+  $('#demo-toggle').addEventListener('click', () => demoCmd('demo_togglepause'));
+  $('#demo-back').addEventListener('click', () => demoCmd(`demo_gototick ${-Math.round(10 / DEMO_TICK)} 1`));
+  $('#demo-fwd').addEventListener('click', () => demoCmd(`demo_gototick ${Math.round(10 / DEMO_TICK)} 1`));
+  $('#demo-prev').addEventListener('click', () => demo && demoCmd(`ssm_replay_part ${demo.part - 1}`));
+  $('#demo-next').addEventListener('click', () => demo && demoCmd(`ssm_replay_part ${demo.part + 1}`));
+  $('#demo-stop').addEventListener('click', () => { UI.closeAll(); demoCmd('disconnect'); });
+  for (const b of $$('#demo-speed button')) b.addEventListener('click', () => demoCmd(`demo_timescale ${b.dataset.scale}`));
+  const seek = $('#demo-seek');
+  seek.addEventListener('input', () => {
+    seeking = true;
+    $('#demo-time').textContent = `${demoClock(Number(seek.value))} / ${demoClock(Number(seek.max))}`;
+  });
+  seek.addEventListener('change', () => { seeking = false; demoCmd(`demo_gototick ${seek.value}`); });
+
   // Save
   let saveSelected = null; // null = new slot
   async function refreshSave() {
@@ -704,6 +755,17 @@
     for (const sel of $$('select[data-accents]')) {
       sel.replaceChildren(...Prefs.ACCENTS.map((a) => h('option', { value: a.value, 'data-swatch': a.value, text: a.label })));
     }
+    for (const sel of $$('select[data-crosshair-colors]')) {
+      const colors = [{ value: '#f2f2f2', label: 'White' }, { value: '#7cf26d', label: 'Green' }, { value: '#f2e24a', label: 'Yellow' },
+        { value: '#5ef2f2', label: 'Cyan' }, ...Prefs.ACCENTS.filter((a) => a.value !== '#f2f2f2' && a.value !== '#86dc9a')];
+      sel.replaceChildren(...colors.map((a) => h('option', { value: a.value, 'data-swatch': a.value, text: a.label })));
+    }
+    for (const sel of $$('select[data-crosshair-styles]')) {
+      sel.replaceChildren(...Crosshair.STYLES.map((a) => h('option', { value: a.value, text: a.label })));
+    }
+    const drawPreview = () => { const el = $('#crosshair-preview'); if (el) el.innerHTML = Crosshair.svg(Crosshair.fromPrefs(Prefs)); };
+    drawPreview();
+    Prefs.onChange((key) => { if (key == null || String(key).startsWith('hud.ch')) drawPreview(); });
     for (const el of $$('[data-pref]')) {
       showPref(el);
       const key = el.dataset.pref;
