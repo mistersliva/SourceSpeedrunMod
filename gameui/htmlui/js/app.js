@@ -311,9 +311,12 @@
   function renderDemo(d) {
     demo = d;
     const bar = $('#demobar');
-    const show = !!d.playing && !d.rendering;
+    // Opened with the right mouse button / ssm_demo_ui, not with Esc.
+    const show = !!d.playing && !d.rendering && !!d.controls;
+    if (show && bar.hidden) UI.closeAll();
     if (bar.hidden !== !show) bar.hidden = !show;
-    document.body.classList.toggle('demo-playing', show);
+    document.body.classList.toggle('demo-playing', !!d.playing);
+    document.body.classList.toggle('demo-only', show);
     if (!show) return;
     const total = Math.max(1, d.total || 1);
     const seek = $('#demo-seek');
@@ -333,8 +336,15 @@
     try { renderDemo(await Source.call('demo.state')); } catch {}
   }
   setInterval(() => { if (!document.hidden) pollDemo(); }, 250);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) pollDemo(); });
 
   const demoCmd = (c) => { Source.cmd(c); setTimeout(pollDemo, 80); };
+  // Right click again (or the bound key, handled by the engine) closes the controls.
+  addEventListener('contextmenu', (e) => {
+    if (!document.body.classList.contains('demo-only')) return;
+    e.preventDefault();
+    Source.cmd('ssm_demo_ui');
+  });
   $('#demo-toggle').addEventListener('click', () => demoCmd('demo_togglepause'));
   $('#demo-back').addEventListener('click', () => demoCmd(`demo_gototick ${-Math.round(10 / DEMO_TICK)} 1`));
   $('#demo-fwd').addEventListener('click', () => demoCmd(`demo_gototick ${Math.round(10 / DEMO_TICK)} 1`));

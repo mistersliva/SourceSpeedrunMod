@@ -9,6 +9,7 @@
 #include "keys.h"
 #include "cdll_engine_int.h"
 #include "cmd.h"
+#include "demo.h"
 #include "toolframework/itoolframework.h"
 #include "toolframework/itoolsystem.h"
 #include "tier1/utlbuffer.h"
@@ -47,6 +48,9 @@ static KeyInfo_t	s_pKeyInfo[BUTTON_CODE_LAST];
 //-----------------------------------------------------------------------------
 // Trap mode is used by the keybinding UI
 //-----------------------------------------------------------------------------
+static ConVar ssm_demo_ui_key( "ssm_demo_ui_key", "MOUSE2", FCVAR_ARCHIVE,
+	"Key that opens the demo playback controls while a demo plays (empty = only keys bound to ssm_demo_ui)." );
+
 static bool			s_bTrapMode = false;
 static bool			s_bDoneTrapping = false;
 static ButtonCode_t	s_nTrapKeyUp = BUTTON_CODE_INVALID;
@@ -741,6 +745,21 @@ void Key_Event( const InputEvent_t &event )
 	// Let vgui have a whack at keys
 	if ( FilterKey( event, KEY_UP_VGUI, HandleVGuiKey ) )
 		return;
+
+	// SourceSpeedrunMod: while a demo plays, the demo playback key (right mouse
+	// button by default, ssm_demo_ui_key) opens the playback controls.
+	if ( bDown && demoplayer && demoplayer->IsPlayingBack() && s_pKeyInfo[code].m_pKeyBinding &&
+		 V_stristr( s_pKeyInfo[code].m_pKeyBinding, "ssm_demo_ui" ) )
+	{
+		Cbuf_AddText( "ssm_demo_ui\n" );
+		return;
+	}
+	if ( bDown && demoplayer && demoplayer->IsPlayingBack() && ssm_demo_ui_key.GetString()[0] &&
+		 code == g_pInputSystem->StringToButtonCode( ssm_demo_ui_key.GetString() ) )
+	{
+		Cbuf_AddText( "ssm_demo_ui\n" );
+		return;
+	}
 
 	// Let the client have a whack at keys
 	if ( FilterKey( event, KEY_UP_CLIENT, HandleClientKey ) )

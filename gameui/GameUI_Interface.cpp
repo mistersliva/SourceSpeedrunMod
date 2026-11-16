@@ -267,6 +267,11 @@ void CGameUI::OnGameUIHidden()
 {
 	m_bActivatedUI = false;
 
+	// The demo playback controls (ssm_demo_ui) close with the menu.
+	static ConVarRef ssm_demo_ui_open( "ssm_demo_ui_open" );
+	if ( ssm_demo_ui_open.IsValid() )
+		ssm_demo_ui_open.SetValue( 0 );
+
 	if ( engine->GetMaxClients() <= 1 )
 	{
 		engine->ClientCmd_Unrestricted( "unpause\n" );

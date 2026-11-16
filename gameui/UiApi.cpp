@@ -839,12 +839,31 @@ bool Api_ReplaysList( const json::Value &, json::Writer &out, std::string & )
 	return true;
 }
 
+// Demo playback controls: right mouse button during playback (engine:
+// ssm_demo_ui_key) or any key bound to ssm_demo_ui. Opens the menu showing only
+// the playback bar; again closes it.
+ConVar ssm_demo_ui_open( "ssm_demo_ui_open", "0", FCVAR_HIDDEN | FCVAR_DONTRECORD, "" );
+
+CON_COMMAND( ssm_demo_ui, "Show or hide the demo playback controls (while a demo plays)." )
+{
+	if ( GameUI().IsActive() )
+	{
+		engine->ClientCmd_Unrestricted( "gameui_hide\n" );
+		return;
+	}
+	if ( !engine->IsPlayingDemo() )
+		return;
+	ssm_demo_ui_open.SetValue( 1 );
+	engine->ClientCmd_Unrestricted( "gameui_activate\n" );
+}
+
 // Demo / replay playback position for the menu's playback bar.
 bool Api_DemoState( const json::Value &, json::Writer &out, std::string & )
 {
 	out.BeginObject();
 	const bool playing = engine->IsPlayingDemo();
 	out.Prop( "playing", playing );
+	out.Prop( "controls", ssm_demo_ui_open.GetBool() );
 	if ( playing )
 	{
 		out.Prop( "loading", engine->IsLoadingDemo() );
@@ -1286,6 +1305,7 @@ bool Api_BindsList( const json::Value &, json::Writer &out, std::string & )
 		{ "kill", "Kill (respawn)" },
 		{ "+ssm_duckjump", "Duck + jump" },
 		{ "ssm_showpos", "Toggle position display (cl_showpos)" },
+		{ "ssm_demo_ui", "Demo playback controls (right mouse button while watching)" },
 	};
 	auto writeSection = [&]( const char *title, const BindItem *items, size_t count ) {
 		out.BeginObject();

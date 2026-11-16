@@ -379,3 +379,5 @@ body.is-quickload #quickload { display: block; }
 .demobar__speed button { padding: 0.35rem 0.55rem; }
 body.demo-playing #quick, body.demo-playing [data-open="savegame"] { display: none; }
 .crosshair-preview svg { transform: scale(2); }
+/* Demo controls only (right click while watching): the game stays visible */
+body.demo-only #main, body.demo-only #bgblur { display: none; }
