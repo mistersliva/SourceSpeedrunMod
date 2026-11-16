@@ -846,6 +846,14 @@ ConVar ssm_demo_ui_open( "ssm_demo_ui_open", "0", FCVAR_HIDDEN | FCVAR_DONTRECOR
 
 CON_COMMAND( ssm_demo_ui, "Show or hide the demo playback controls (while a demo plays)." )
 {
+	// One click can reach both the engine binding and the page; a toggle
+	// within a moment of the last one is the same click.
+	static double s_flLast = 0;
+	const double now = Plat_FloatTime();
+	if ( now - s_flLast < 0.35 )
+		return;
+	s_flLast = now;
+
 	if ( GameUI().IsActive() )
 	{
 		engine->ClientCmd_Unrestricted( "gameui_hide\n" );

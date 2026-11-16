@@ -24,6 +24,7 @@
 
   const DEFAULTS = {
     // Interface
+    'ui.lang': 'auto',        // auto (game language) | en | ru — js/i18n.js
     'ui.accent': '#7cc8f5',
     'ui.font': 'din',
     'ui.scale': 1,

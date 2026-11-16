@@ -742,24 +742,27 @@ void Key_Event( const InputEvent_t &event )
 	if ( FilterKey( event, KEY_UP_TOOLS, HandleToolKey ) )
 		return;
 							 
+	// SourceSpeedrunMod: while a demo plays, the demo playback key (right mouse
+	// button by default, ssm_demo_ui_key, or any key bound to ssm_demo_ui)
+	// toggles the playback controls. Checked before vgui so the same key also
+	// closes them; the normal menu (Esc) keeps the key for itself.
+	if ( demoplayer && demoplayer->IsPlayingBack() &&
+		 ( ( s_pKeyInfo[code].m_pKeyBinding && V_stristr( s_pKeyInfo[code].m_pKeyBinding, "ssm_demo_ui" ) ) ||
+		   ( ssm_demo_ui_key.GetString()[0] && code == g_pInputSystem->StringToButtonCode( ssm_demo_ui_key.GetString() ) ) ) )
+	{
+		static ConVarRef ssm_demo_ui_open( "ssm_demo_ui_open" );
+		const bool bControlsOpen = ssm_demo_ui_open.IsValid() && ssm_demo_ui_open.GetBool();
+		if ( !EngineVGui()->IsGameUIVisible() || bControlsOpen )
+		{
+			if ( bDown )
+				Cbuf_AddText( "ssm_demo_ui\n" );
+			return;
+		}
+	}
+
 	// Let vgui have a whack at keys
 	if ( FilterKey( event, KEY_UP_VGUI, HandleVGuiKey ) )
 		return;
-
-	// SourceSpeedrunMod: while a demo plays, the demo playback key (right mouse
-	// button by default, ssm_demo_ui_key) opens the playback controls.
-	if ( bDown && demoplayer && demoplayer->IsPlayingBack() && s_pKeyInfo[code].m_pKeyBinding &&
-		 V_stristr( s_pKeyInfo[code].m_pKeyBinding, "ssm_demo_ui" ) )
-	{
-		Cbuf_AddText( "ssm_demo_ui\n" );
-		return;
-	}
-	if ( bDown && demoplayer && demoplayer->IsPlayingBack() && ssm_demo_ui_key.GetString()[0] &&
-		 code == g_pInputSystem->StringToButtonCode( ssm_demo_ui_key.GetString() ) )
-	{
-		Cbuf_AddText( "ssm_demo_ui\n" );
-		return;
-	}
 
 	// Let the client have a whack at keys
 	if ( FilterKey( event, KEY_UP_CLIENT, HandleClientKey ) )

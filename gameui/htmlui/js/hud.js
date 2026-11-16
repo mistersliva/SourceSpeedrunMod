@@ -252,6 +252,7 @@
   if (Source.IN_GAME) {
     Source.trackGlass('hud.glass', '.glass, #selection .wpn, #selection .slot__num');
     Source.call('hud.ready').catch((e) => console.error('[hud] ready failed', e));
+    Source.call('game.info').then((i) => I18N.start(i.language)).catch(() => I18N.start(''));
     return;
   }
 

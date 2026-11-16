@@ -45,7 +45,7 @@
         <button class="menu__item" data-open="replays">Replays</button>
         <button class="menu__item" data-open="options">Settings</button>
         <button class="menu__item" data-action="console">Console</button>
-        <button class="menu__item" data-action="disconnect" data-when="multiplayer">Disconnect</button>
+        <button class="menu__item" data-action="disconnect" data-when="ingame">Disconnect</button>
         <button class="menu__item" data-action="quit">Quit</button>
       </nav>
 
@@ -185,6 +185,8 @@
       <div class="panel__body">
         <!-- Interface -->
         <div data-panel="interface" class="form-grid" hidden>
+          <label class="field"><span>Language</span>
+            <select data-pref="ui.lang"><option value="auto">Automatic (game language)</option><option value="en">English</option><option value="ru">Русский</option></select></label>
           <label class="field"><span>Accent colour</span><select data-pref="ui.accent" data-accents></select></label>
           <label class="field"><span>Font</span>
             <select data-pref="ui.font"><option value="din">Bahnschrift</option><option value="segoe">Segoe UI</option></select></label>
@@ -404,6 +406,7 @@
   <script src="js/source.js"></script>
   <script src="js/prefs.js"></script>
   <script src="js/crosshair.js"></script>
+  <script src="js/i18n.js"></script>
   <script src="js/ui.js"></script>
   <script src="js/app.js"></script>
 </body>

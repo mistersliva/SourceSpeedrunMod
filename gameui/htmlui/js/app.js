@@ -313,7 +313,7 @@
     const bar = $('#demobar');
     // Opened with the right mouse button / ssm_demo_ui, not with Esc.
     const show = !!d.playing && !d.rendering && !!d.controls;
-    if (show && bar.hidden) UI.closeAll();
+    if (show && bar.hidden) { UI.closeAll(); controlsShownAt = performance.now(); }
     if (bar.hidden !== !show) bar.hidden = !show;
     document.body.classList.toggle('demo-playing', !!d.playing);
     document.body.classList.toggle('demo-only', show);
@@ -339,12 +339,14 @@
   document.addEventListener('visibilitychange', () => { if (!document.hidden) pollDemo(); });
 
   const demoCmd = (c) => { Source.cmd(c); setTimeout(pollDemo, 80); };
-  // Right click again (or the bound key, handled by the engine) closes the controls.
-  addEventListener('contextmenu', (e) => {
-    if (!document.body.classList.contains('demo-only')) return;
-    e.preventDefault();
-    Source.cmd('ssm_demo_ui');
-  });
+  // A new right click (or the bound key, handled by the engine) closes the
+  // controls. The release of the click that opened them also reaches the page
+  // as a context menu event; only a click that was pressed here counts.
+  // The page only gets the release of a right click (twice); the one that
+  // opened the controls arrives right after they appear, so it is skipped.
+  // (The engine toggles them on the key press, before the page sees it.)
+  let controlsShownAt = 0;
+  addEventListener('contextmenu', (e) => e.preventDefault());
   $('#demo-toggle').addEventListener('click', () => demoCmd('demo_togglepause'));
   $('#demo-back').addEventListener('click', () => demoCmd(`demo_gototick ${-Math.round(10 / DEMO_TICK)} 1`));
   $('#demo-fwd').addEventListener('click', () => demoCmd(`demo_gototick ${Math.round(10 / DEMO_TICK)} 1`));
@@ -863,6 +865,7 @@
     Source.cvar.value('volume').then((v) => UISound.setGameVolume(v ?? 1)).catch(() => {});
     document.addEventListener('cvarchange', (e) => { if (e.detail.name === 'volume') UISound.setGameVolume(e.detail.value); });
     UI.bind(document);
+    I18N.start(info?.language);
 
     const st = await Source.call('ui.ready');
     applyState(st);
