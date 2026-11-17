@@ -25,6 +25,7 @@
 #include "tier1/interface.h"
 #include "GameUI/IHtmlHud.h"
 #include "htmlhud.h"
+#include "c_ssm_ghosts.inc"
 
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
@@ -356,6 +357,9 @@ private:
 		// "game time with pauses" needs the pause state.
 		const Vector &org = player->GetAbsOrigin();
 		j.Key( "pos" ).Begin( '[' ).Num( org.x ).Item().Num( org.y ).Item().Num( org.z ).End( ']' );
+		// Ghost race: where the player looks and whether they crouch.
+		j.Key( "yaw" ).Num( player->EyeAngles().y );
+		j.Key( "duck" ).Bool( ( player->GetFlags() & FL_DUCKING ) != 0 );
 		j.Key( "paused" ).Bool( engine->IsPaused() );
 
 		// Active weapon

@@ -12,6 +12,8 @@
   <!-- Window bar (frameless window) -->
   <header class="titlebar">
     <span class="titlebar__title">SourceSpeedrunMod launcher</span>
+    <span class="titlebar__update" id="lu-text" hidden></span>
+    <button class="titlebar__action" id="lu-restart" hidden>Restart to update</button>
     <button class="titlebar__btn" id="win-min" aria-label="Minimize"><svg viewBox="0 0 12 12"><path d="M2 6.5h8"/></svg></button>
     <button class="titlebar__btn titlebar__btn--close" id="win-close" aria-label="Close"><svg viewBox="0 0 12 12"><path d="m2.5 2.5 7 7m0-7-7 7"/></svg></button>
   </header>
@@ -37,6 +39,7 @@
         <div class="dl__bar"><div class="dl__fill" id="dl-fill"></div></div>
         <div class="dl__line"><span id="dl-text"></span><button class="btn btn--text btn--small" id="dl-cancel">Cancel</button></div>
       </div>
+      <label class="check" id="with-cutsceneless" hidden><input type="checkbox" id="with-cutsceneless-box"><i></i><span>Also download Cutsceneless maps <span class="is-dim" id="with-cutsceneless-size"></span></span></label>
       <button class="play" id="play" disabled>Play</button>
       <button class="btn btn--text playbox__alt" id="play-anyway" hidden>Play without updating</button>
     </div>
@@ -159,6 +162,22 @@
             <div class="cycler" data-setting="closeOnPlay" data-values="true,false" data-labels="Close launcher,Minimize launcher"></div>
           </div>
         </div>
+        <h3 class="panel__subtitle">Optional content</h3>
+        <div class="rows">
+          <div class="row">
+            <span class="row__label">Cutsceneless maps</span>
+            <span class="row__value" id="addon-cutsceneless">—</span>
+            <button class="btn btn--small" data-addon="cutsceneless" data-op="install">Install</button>
+            <button class="btn btn--small" data-addon="cutsceneless" data-op="remove" hidden>Remove</button>
+          </div>
+          <div class="row">
+            <span class="row__label">ffmpeg (replay videos)</span>
+            <span class="row__value" id="addon-ffmpeg">—</span>
+            <button class="btn btn--small" data-addon="ffmpeg" data-op="install">Install</button>
+            <button class="btn btn--small" data-addon="ffmpeg" data-op="remove" hidden>Remove</button>
+          </div>
+        </div>
+        <p class="note">Cutsceneless is peng's map patch: it is switched on and off in the game (Settings → Game) and needs a new game, since saves from the other maps do not load. ffmpeg lets the game turn replays into MP4 videos.</p>
         <div class="panel__footer">
           <button class="btn btn--text" id="open-gamedir">Open mod folder</button>
           <span class="spacer"></span>

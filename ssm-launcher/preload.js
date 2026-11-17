@@ -24,11 +24,15 @@ contextBridge.exposeInMainWorld('launcher', {
   checkMod: () => call('mod:check'),
   installMod: () => call('mod:install'),
   cancelInstall: () => call('mod:cancel'),
+  installAddon: (id) => call('addon:install', id),
+  removeAddon: (id) => call('addon:remove', id),
   pickInstallDir: () => call('mod:pickInstallDir'),
+  launcherUpdate: () => call('launcher:update'),
+  restartToUpdate: () => call('launcher:restart'),
   minimize: () => call('win:minimize'),
   close: () => call('win:close'),
   on: (channel, fn) => {
-    if (!['state-changed', 'toast', 'install:progress'].includes(channel)) return;
+    if (!['state-changed', 'toast', 'install:progress', 'launcher-update'].includes(channel)) return;
     ipcRenderer.on(channel, (_e, data) => fn(data));
   },
 });

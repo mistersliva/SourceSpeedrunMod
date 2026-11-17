@@ -167,3 +167,20 @@ button { font: inherit; color: inherit; }
 .toast { max-width: 26rem; padding: 0.7rem 1rem; background: rgba(34, 36, 40, 0.97); border-left: 3px solid var(--accent); font-size: 0.9rem; animation: page-up 0.36s cubic-bezier(0.16, 1, 0.3, 1); }
 .toast--error { border-left-color: var(--bad); }
 .toast--ok { border-left-color: var(--ok); }
+
+/* Sub-heading inside a panel */
+.panel__subtitle { margin: 0.4rem 0 0; padding: 0.7rem 1.4rem 0.2rem; color: var(--text-dim); font-size: 0.8rem; font-weight: 400; letter-spacing: 0.2em; text-transform: uppercase; }
+.row .btn--small + .btn--small { margin-left: -0.4rem; }
+
+/* Square checkbox, as in the game */
+.check { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.7rem; color: var(--text-muted); font-size: 0.85rem; cursor: pointer; }
+.check input { position: absolute; opacity: 0; pointer-events: none; }
+.check i { flex: 0 0 auto; width: 1rem; height: 1rem; border: 1px solid rgba(255, 255, 255, 0.35); background: rgba(0, 0, 0, 0.3); }
+.check input:checked + i { border-color: var(--accent); background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m3.5 8.2 3 3 6-6.4' fill='none' stroke='%230b0d10' stroke-width='2'/%3E%3C/svg%3E") center / 100% no-repeat; }
+.check input:focus-visible + i { outline: 1px solid var(--accent); outline-offset: 1px; }
+.check:hover { color: var(--text); }
+
+/* Launcher self-update notice in the window bar */
+.titlebar__update { margin-right: 0.8rem; color: var(--text-dim); font-size: 0.72rem; letter-spacing: 0.08em; }
+.titlebar__action { -webkit-app-region: no-drag; height: 1.6rem; margin-right: 0.6rem; padding: 0 0.8rem; border: 0; background: var(--accent); color: #0b0d10; font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; }
+.titlebar__action:hover { filter: brightness(1.08); }

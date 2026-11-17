@@ -271,6 +271,9 @@ void CGameUI::OnGameUIHidden()
 	static ConVarRef ssm_demo_ui_open( "ssm_demo_ui_open" );
 	if ( ssm_demo_ui_open.IsValid() )
 		ssm_demo_ui_open.SetValue( 0 );
+	static ConVarRef ssm_chat_open( "ssm_chat_open" );
+	if ( ssm_chat_open.IsValid() )
+		ssm_chat_open.SetValue( 0 );
 
 	if ( engine->GetMaxClients() <= 1 )
 	{

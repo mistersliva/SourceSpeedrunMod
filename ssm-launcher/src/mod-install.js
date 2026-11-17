@@ -14,6 +14,8 @@ const { spawn, execFile } = require('child_process');
 const DEFAULT_REPO = 'mistersliva/SourceSpeedrunMod';
 const ASSET_RE = /^SourceSpeedrunMod-.*\.zip$/i;
 const VERSION_FILE = 'ssm-version.txt';
+// Windows' bsdtar reads zip; a GNU tar earlier in PATH (Git for Windows) does not.
+const TAR = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe');
 
 function installedVersion(dir) {
   try { return fs.readFileSync(path.join(dir, VERSION_FILE), 'utf8').trim(); } catch { return ''; }
@@ -70,31 +72,38 @@ function freeBytes(dir) {
 // One install at a time; cancel() aborts the download or stops tar.
 let current = null;
 
-async function install({ release, dir, onProgress }) {
+function checkWritable(dir) {
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    const probe = path.join(dir, '.write-test');
+    fs.writeFileSync(probe, '');
+    fs.rmSync(probe);
+  } catch {
+    throw new Error(`No permission to write to ${dir}. Choose another install folder in Settings.`);
+  }
+}
+
+// Downloads `asset` ({ name, size, url }) into <dir>\.download and extracts it
+// with tar into `dest`. `tarArgs` are extra arguments (strip, excludes,
+// member patterns). Progress: download, then extract.
+async function installArchive({ asset, dir, dest, tarArgs = [], onProgress, spaceFactor = 2.2 }) {
   if (current) throw new Error('An install is already running.');
   const abort = new AbortController();
   let tar = null;
   current = { cancel: () => { abort.abort(); if (tar) tar.kill(); } };
+  const tmpDir = path.join(dir, '.download');
   try {
-    try {
-      fs.mkdirSync(dir, { recursive: true });
-      const probe = path.join(dir, '.write-test');
-      fs.writeFileSync(probe, '');
-      fs.rmSync(probe);
-    } catch {
-      throw new Error(`No permission to write to ${dir}. Choose another install folder in Settings.`);
-    }
+    checkWritable(dir);
     if (await isGameRunning(dir)) throw new Error('Close the game first.');
-    const need = release.asset.size * 2.2; // zip + extracted files
+    const need = asset.size * spaceFactor;
     if (freeBytes(dir) < need) throw new Error(`Not enough disk space: ${(need / 1073741824).toFixed(1)} GB needed.`);
 
     // 1. Download.
-    const tmpDir = path.join(dir, '.download');
     fs.mkdirSync(tmpDir, { recursive: true });
-    const zip = path.join(tmpDir, release.asset.name);
-    const res = await fetch(release.asset.url, { signal: abort.signal, headers: { 'User-Agent': 'SourceSpeedrunMod-Launcher' } });
+    const zip = path.join(tmpDir, asset.name);
+    const res = await fetch(asset.url, { signal: abort.signal, headers: { 'User-Agent': 'SourceSpeedrunMod-Launcher' } });
     if (!res.ok || !res.body) throw new Error(`Download failed: HTTP ${res.status}`);
-    const total = Number(res.headers.get('content-length')) || release.asset.size;
+    const total = Number(res.headers.get('content-length')) || asset.size;
     const out = fs.createWriteStream(zip);
     let done = 0;
     const started = Date.now();
@@ -118,13 +127,14 @@ async function install({ release, dir, onProgress }) {
 
     // 2. Extract (files are counted first so extraction has a real progress bar).
     const files = await new Promise((resolve, reject) => {
-      execFile('tar', ['-tf', zip], { windowsHide: true, maxBuffer: 64 * 1024 * 1024 }, (err, stdout) => {
+      execFile(TAR, ['-tf', zip], { windowsHide: true, maxBuffer: 64 * 1024 * 1024 }, (err, stdout) => {
         if (err) return reject(new Error('The download is damaged.'));
         resolve(stdout.split(/\r?\n/).filter((l) => l && !l.endsWith('/')).length);
       });
     });
+    fs.mkdirSync(dest, { recursive: true });
     await new Promise((resolve, reject) => {
-      tar = spawn('tar', ['-xvf', zip, '-C', dir, '--strip-components', '1', '--exclude', '*/SSM-Launcher.exe'], { windowsHide: true });
+      tar = spawn(TAR, ['-xvf', zip, '-C', dest, ...tarArgs], { windowsHide: true });
       let n = 0;
       let buf = '';
       let lastErr = '';
@@ -144,14 +154,10 @@ async function install({ release, dir, onProgress }) {
         resolve();
       });
     });
-
-    fs.writeFileSync(path.join(dir, VERSION_FILE), release.tag);
     fs.rmSync(tmpDir, { recursive: true, force: true });
-    onProgress({ phase: 'done' });
   } catch (e) {
-    // Drop the partial download; a half-extracted update is repaired by
-    // installing again (the version file is only written on success).
-    try { fs.rmSync(path.join(dir, '.download'), { recursive: true, force: true }); } catch {}
+    // Drop the partial download.
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
     if (abort.signal.aborted) throw new Error('cancelled');
     throw e;
   } finally {
@@ -159,8 +165,22 @@ async function install({ release, dir, onProgress }) {
   }
 }
 
+async function install({ release, dir, onProgress }) {
+  // A half-extracted update is repaired by installing again (the version file
+  // is only written on success).
+  await installArchive({
+    asset: release.asset,
+    dir,
+    dest: dir,
+    tarArgs: ['--strip-components', '1', '--exclude', '*/SSM-Launcher.exe'],
+    onProgress,
+  });
+  fs.writeFileSync(path.join(dir, VERSION_FILE), release.tag);
+  onProgress({ phase: 'done' });
+}
+
 function cancel() {
   if (current) current.cancel();
 }
 
-module.exports = { latestRelease, install, cancel, installedVersion, newer, DEFAULT_REPO };
+module.exports = { latestRelease, install, installArchive, cancel, installedVersion, newer, isGameRunning, DEFAULT_REPO };

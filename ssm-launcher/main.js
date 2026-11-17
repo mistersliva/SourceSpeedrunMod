@@ -10,6 +10,7 @@ const steamLocal = require('./src/steam-local');
 const steamAuth = require('./src/steam-auth');
 const gameinfo = require('./src/gameinfo');
 const modInstall = require('./src/mod-install');
+const addons = require('./src/addons');
 
 const GAME_EXE = 'hl2_win64.exe';
 
@@ -31,7 +32,7 @@ function bundledConfig() {
 // makes Games\ writable). Launcher 1.1 installed the mod in %LOCALAPPDATA%.
 const legacyInstallDir = () => path.join(process.env.LOCALAPPDATA || app.getPath('userData'), 'SourceSpeedrunMod');
 const defaultInstallDir = () => (app.isPackaged ? path.join(path.dirname(process.execPath), 'Games', 'SourceSpeedrunMod') : legacyInstallDir());
-const DEFAULTS = { gameDir: '', installDir: '', launchOptions: '-novid', windowed: false, closeOnPlay: true, releaseRepo: modInstall.DEFAULT_REPO, ownershipEndpoint: '', steamApiKey: '', account: null };
+const DEFAULTS = { gameDir: '', installDir: '', launchOptions: '-novid', windowed: false, closeOnPlay: true, releaseRepo: modInstall.DEFAULT_REPO, cutscenelessRepo: 'mistersliva/SSM-Cutsceneless', withCutsceneless: false, ownershipEndpoint: '', steamApiKey: '', account: null };
 let settings = { ...DEFAULTS };
 function loadSettings() {
   let saved = {};
@@ -118,6 +119,7 @@ async function state() {
     releaseError,
     updateAvailable: !!(release && installed && modInstall.newer(release.tag, installed)),
     installing,
+    addons: await addons.status(gameDir, settings).catch(() => ({})),
     hl2Mounted: mounted,
     steam,
     account,
@@ -186,7 +188,7 @@ function handle(channel, fn) {
 handle('state', state);
 handle('play', play);
 handle('settings:set', (patch) => {
-  const allowed = ['gameDir', 'launchOptions', 'windowed', 'closeOnPlay'];
+  const allowed = ['gameDir', 'launchOptions', 'windowed', 'closeOnPlay', 'withCutsceneless'];
   for (const k of Object.keys(patch || {})) if (allowed.includes(k)) settings[k] = patch[k];
   saveSettings();
   return settings;
@@ -232,14 +234,41 @@ handle('mod:install', async () => {
   installing = true;
   send('state-changed');
   try {
-    await modInstall.install({ release: rel, dir, onProgress: (p) => send('install:progress', p) });
-    return { dir, version: rel.tag };
+    const onProgress = (p) => send('install:progress', { ...p, what: 'mod' });
+    await modInstall.install({ release: rel, dir, onProgress });
+    // First install with "also download Cutsceneless" ticked.
+    let extra = '';
+    if (settings.withCutsceneless && !addons.ADDONS.cutsceneless.installed(dir)) {
+      try {
+        await addons.install('cutsceneless', dir, settings, (p) => send('install:progress', { ...p, what: 'cutsceneless' }));
+      } catch (e) {
+        extra = e.message === 'cancelled' ? 'Cutsceneless download cancelled' : `Cutsceneless maps: ${e.message}`;
+      }
+    }
+    return { dir, version: rel.tag, extra };
   } finally {
     installing = false;
     send('state-changed');
   }
 });
 handle('mod:cancel', () => modInstall.cancel());
+handle('addon:install', async (id) => {
+  if (gameProcess) throw new Error('Close the game first.');
+  if (installing) throw new Error('An install is already running.');
+  installing = true;
+  send('state-changed');
+  try {
+    return await addons.install(id, findGameDir(), settings, (p) => send('install:progress', { ...p, what: id }));
+  } finally {
+    installing = false;
+    send('state-changed');
+  }
+});
+handle('addon:remove', async (id) => {
+  if (gameProcess) throw new Error('Close the game first.');
+  await addons.remove(id, findGameDir());
+  return state();
+});
 handle('mod:pickInstallDir', async () => {
   const r = await dialog.showOpenDialog(win, { title: 'Install SourceSpeedrunMod to', properties: ['openDirectory', 'createDirectory'] });
   if (r.canceled || !r.filePaths[0]) return null;
@@ -251,6 +280,32 @@ handle('mod:pickInstallDir', async () => {
   saveSettings();
   return dir;
 });
+// ------------------------------------------------------- Launcher self-update
+// The installer and latest.yml are attached to each GitHub release; a newer
+// launcher downloads in the background and installs on restart (or on quit).
+let launcherUpdate = { state: 'idle' }; // idle | downloading | ready | error
+function setupAutoUpdate() {
+  if (!app.isPackaged) return;
+  let autoUpdater;
+  try { ({ autoUpdater } = require('electron-updater')); } catch { return; }
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  const report = (u) => { launcherUpdate = u; send('launcher-update', u); };
+  autoUpdater.on('update-available', (i) => report({ state: 'downloading', version: i.version, percent: 0 }));
+  autoUpdater.on('download-progress', (p) => report({ ...launcherUpdate, state: 'downloading', percent: Math.round(p.percent) }));
+  autoUpdater.on('update-downloaded', (i) => report({ state: 'ready', version: i.version }));
+  autoUpdater.on('error', () => { if (launcherUpdate.state === 'downloading') report({ state: 'idle' }); });
+  const check = () => autoUpdater.checkForUpdates().catch(() => {});
+  check();
+  setInterval(check, 2 * 60 * 60 * 1000);
+  handle('launcher:restart', () => {
+    if (gameProcess) throw new Error('Close the game first.');
+    if (installing) throw new Error('Wait for the download to finish.');
+    setImmediate(() => autoUpdater.quitAndInstall(true, true));
+  });
+}
+handle('launcher:update', () => launcherUpdate);
+
 handle('win:minimize', () => win.minimize());
 handle('win:close', () => win.close());
 
@@ -264,6 +319,7 @@ if (!app.requestSingleInstanceLock()) {
     createWindow();
     refreshAccount().then(() => send('state-changed')).catch(() => {});
     checkRelease().then(() => send('state-changed')).catch(() => {});
+    setupAutoUpdate();
   });
   app.on('window-all-closed', () => app.quit());
 }

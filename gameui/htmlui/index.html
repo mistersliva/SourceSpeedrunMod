@@ -43,6 +43,7 @@
         <button class="menu__item" data-open="loadgame">Load game</button>
         <button class="menu__item" data-open="savegame" data-when="cansave">Save game</button>
         <button class="menu__item" data-open="replays">Replays</button>
+        <button class="menu__item" data-open="race">Ghost race</button>
         <button class="menu__item" data-open="options">Settings</button>
         <button class="menu__item" data-action="console">Console</button>
         <button class="menu__item" data-action="disconnect" data-when="ingame">Disconnect</button>
@@ -80,6 +81,12 @@
       </span>
       <button class="demobar__btn" id="demo-stop" title="Stop">Stop</button>
     </div>
+  </div>
+
+  <!-- ===================================================== Ghost race chat input (Y in game) -->
+  <div class="chatbox glass" id="chatbox" hidden>
+    <span class="chatbox__label">Say</span>
+    <input type="text" class="chatbox__input" id="chat-input" maxlength="200" spellcheck="false" autocomplete="off">
   </div>
 
   <!-- ===================================================== New game -->
@@ -159,6 +166,47 @@
         <div class="spacer"></div>
         <button class="btn" id="replay-render" disabled>Render MP4</button>
         <button class="btn btn--primary" id="replay-play" disabled>Watch</button>
+      </footer>
+    </div>
+  </section>
+
+  <!-- ===================================================== Ghost race -->
+  <section class="layer" data-layer="race" hidden>
+    <div class="panel">
+      <header class="panel__header">
+        <h2>Ghost race</h2>
+      </header>
+      <div class="panel__body form-grid">
+        <label class="field"><span>Your name</span><input type="text" class="field-input" id="race-name" maxlength="24" spellcheck="false" placeholder="Player"></label>
+        <div id="race-out">
+          <p class="form-note">Everyone plays their own game; the others show up as ghosts and on the race board. Create a lobby and send the code to your friends, or join with their code.</p>
+          <div class="field field--action"><span></span>
+            <span class="btn-row"><input type="text" class="field-input race-code-input" id="race-join-code" maxlength="8" spellcheck="false" placeholder="CODE"><button class="btn" id="race-join">Join</button><button class="btn btn--primary" id="race-create">Create lobby</button></span></div>
+        </div>
+        <div id="race-in" hidden>
+          <div class="race-lobby">
+            <span class="race-lobby__label">Lobby code</span>
+            <span class="race-lobby__code" id="race-lobby-code"></span>
+            <button class="btn" id="race-copy">Copy</button>
+          </div>
+          <ul class="race-players" id="race-players"></ul>
+          <p class="form-note" id="race-hint"></p>
+          <div class="race-chat" id="race-chat-log"></div>
+          <input type="text" class="field-input race-chat__input" id="race-chat-input" maxlength="200" spellcheck="false" autocomplete="off" placeholder="Message to the lobby (Y in game)">
+        </div>
+        <p class="form-note race-error" id="race-error" hidden></p>
+        <hr class="form-rule">
+        <label class="field"><span>Race board in HUD</span><span class="switch"><input type="checkbox" data-pref="mp.board"><i></i></span></label>
+        <label class="field"><span>Show ghosts</span><span class="switch"><input type="checkbox" data-cvar="ssm_ghosts"><i></i></span></label>
+        <label class="field"><span>Ghost opacity</span>
+          <span class="range"><input type="range" id="ghost-alpha" min="30" max="255" step="5" data-cvar="ssm_ghost_alpha" data-format="int"><output for="ghost-alpha"></output></span></label>
+        <label class="field"><span>Race server</span><input type="text" class="field-input" data-pref="mp.server" spellcheck="false"></label>
+      </div>
+      <footer class="panel__footer">
+        <button class="btn btn--danger" id="race-leave" hidden>Leave lobby</button>
+        <div class="spacer"></div>
+        <button class="btn" data-close>Close</button>
+        <button class="btn btn--primary" id="race-start" hidden>Start race</button>
       </footer>
     </div>
   </section>

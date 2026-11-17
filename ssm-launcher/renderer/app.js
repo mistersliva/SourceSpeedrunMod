@@ -87,22 +87,31 @@ function renderPlaybox(s) {
   btn.dataset.action = action;
   $('play-anyway').hidden = action !== 'update' || s.running;
   $('dl').hidden = action !== 'busy';
+
+  // First install: optionally fetch the Cutsceneless maps right after the mod.
+  const cs = s.addons?.cutsceneless;
+  $('with-cutsceneless').hidden = action !== 'install' || !cs?.latest;
+  $('with-cutsceneless-box').checked = !!s.settings.withCutsceneless;
+  $('with-cutsceneless-size').textContent = cs?.size ? `· ${mb(cs.size)}` : '';
 }
+
+const WHAT = { cutsceneless: 'Cutsceneless maps', ffmpeg: 'ffmpeg' };
 
 function renderProgress() {
   const p = progress;
   if (!p) return;
+  const what = WHAT[p.what] ? `${WHAT[p.what]}: ` : '';
   const fill = $('dl-fill');
   fill.classList.remove('is-indeterminate');
   if (p.phase === 'download') {
     fill.style.width = `${p.total ? (p.done / p.total) * 100 : 0}%`;
     const speed = p.speed ? ` · ${(p.speed / 1048576).toFixed(1)} MB/s` : '';
     const eta = duration(p.eta);
-    $('dl-text').textContent = `Downloading ${mb(p.done)} / ${mb(p.total)}${speed}${eta ? ` · ${eta} left` : ''}`;
+    $('dl-text').textContent = `${what}Downloading ${mb(p.done)} / ${mb(p.total)}${speed}${eta ? ` · ${eta} left` : ''}`;
     $('dl-cancel').hidden = false;
   } else if (p.phase === 'extract') {
     fill.style.width = `${p.total ? (p.done / p.total) * 100 : 0}%`;
-    $('dl-text').textContent = `Installing files ${p.done} / ${p.total}`;
+    $('dl-text').textContent = p.what === 'ffmpeg' ? `${what}Installing` : `${what}Installing files ${p.done} / ${p.total}`;
     $('dl-cancel').hidden = false;
   } else if (p.phase === 'start') {
     fill.classList.add('is-indeterminate');
@@ -180,9 +189,58 @@ function render(s) {
   for (const c of document.querySelectorAll('.cycler')) renderCycler(c);
   $('launcher-version').textContent = `Launcher ${s.version}`;
   $('open-gamedir').hidden = !s.gameDir;
+  renderAddons(s);
 
   renderPlaybox(s);
 }
+
+function renderAddons(s) {
+  for (const id of ['cutsceneless', 'ffmpeg']) {
+    const a = s.addons?.[id];
+    const install = document.querySelector(`[data-addon="${id}"][data-op="install"]`);
+    const remove = document.querySelector(`[data-addon="${id}"][data-op="remove"]`);
+    let text = '—';
+    let cls = 'is-dim';
+    if (!s.gameDir) text = 'Install the mod first';
+    else if (a?.installed) {
+      const outdated = a.latest && a.installed !== 'installed' && a.installed !== a.latest;
+      text = outdated ? `${a.installed} — ${a.latest} available` : a.installed === 'installed' ? 'Installed' : `Installed (${a.installed})`;
+      cls = outdated ? 'is-warn' : 'is-ok';
+    } else if (a?.latest) text = `Not installed · ${mb(a.size)}`;
+    else if (a?.error) { text = `Not available: ${a.error}`; cls = 'is-bad'; }
+    setValue(`addon-${id}`, text, cls);
+    const outdated = a?.installed && a.latest && a.installed !== 'installed' && a.installed !== a.latest;
+    install.hidden = !!a?.installed && !outdated;
+    install.textContent = outdated ? 'Update' : 'Install';
+    install.disabled = !s.gameDir || !a?.latest || s.installing || s.running;
+    remove.hidden = !a?.installed;
+    remove.disabled = s.installing || s.running;
+  }
+}
+
+async function installAddon(id) {
+  progress = { phase: 'start', what: id };
+  $('dl').hidden = false;
+  renderProgress();
+  try {
+    await L.installAddon(id);
+    toast(`${WHAT[id]} installed`, 'ok');
+  } catch (e) {
+    if (e.message === 'cancelled') toast('Download cancelled');
+    else toast(e.message, 'error');
+  }
+  progress = null;
+  refresh();
+}
+
+for (const b of document.querySelectorAll('[data-addon]')) {
+  b.addEventListener('click', async () => {
+    const { addon: id, op } = b.dataset;
+    if (op === 'install') return installAddon(id);
+    try { render(await L.removeAddon(id)); toast(`${WHAT[id]} removed`); } catch (e) { toast(e.message, 'error'); }
+  });
+}
+$('with-cutsceneless-box').addEventListener('change', (e) => L.setSettings({ withCutsceneless: e.target.checked }).catch(() => {}));
 
 async function refresh() {
   try { render(await L.state()); } catch (e) { toast(e.message, 'error'); }
@@ -250,6 +308,7 @@ async function installMod() {
   try {
     const r = await L.installMod();
     toast(`SourceSpeedrunMod ${r.version} installed`, 'ok');
+    if (r.extra) toast(r.extra, 'error');
   } catch (e) {
     if (e.message === 'cancelled') toast('Download cancelled');
     else toast(e.message, 'error');
@@ -279,6 +338,21 @@ $('play-anyway').addEventListener('click', play);
 $('win-min').addEventListener('click', () => L.minimize());
 $('win-close').addEventListener('click', () => L.close());
 L.on('state-changed', refresh);
+
+// Launcher self-update (downloaded in the background, installed on restart).
+function renderLauncherUpdate(u) {
+  const text = $('lu-text');
+  const btn = $('lu-restart');
+  text.hidden = !(u && u.state === 'downloading');
+  btn.hidden = !(u && u.state === 'ready');
+  if (u?.state === 'downloading') text.textContent = `Downloading launcher ${u.version} · ${u.percent || 0}%`;
+  if (u?.state === 'ready') btn.textContent = `Restart to update to ${u.version}`;
+}
+L.on('launcher-update', renderLauncherUpdate);
+L.launcherUpdate().then(renderLauncherUpdate).catch(() => {});
+$('lu-restart').addEventListener('click', async () => {
+  try { await L.restartToUpdate(); } catch (e) { toast(e.message, 'error'); }
+});
 L.on('toast', (t) => toast(t.text, t.kind));
 
 refresh();

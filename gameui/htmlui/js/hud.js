@@ -133,6 +133,7 @@
 
     // Timer (run timer / map time) + speed + movement mode
     RunTimer.onState(s);
+    Race.onState(s);
     const mode = Prefs.get('hud.timerMode');
     // The splits panel has its own big timer; don't show the run time twice.
     const showTimer = mode === 'map' ? s.time != null : mode === 'run' && !RunTimer.panelVisible;

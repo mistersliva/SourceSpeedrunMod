@@ -1,7 +1,7 @@
 {
   "name": "ssm-launcher",
   "productName": "SourceSpeedrunMod Launcher",
-  "version": "1.2.1",
+  "version": "1.4.0",
   "description": "Launcher for SourceSpeedrunMod",
   "author": "SourceSpeedrunMod",
   "main": "main.js",
@@ -47,10 +47,21 @@
       "uninstallDisplayName": "SourceSpeedrunMod Launcher",
       "deleteAppDataOnUninstall": false,
       "include": "build/installer.nsh"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "mistersliva",
+        "repo": "SourceSpeedrunMod",
+        "releaseType": "release"
+      }
+    ]
   },
   "devDependencies": {
     "electron": "^45.3.2",
     "electron-builder": "^26.18.0"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.11"
   }
 }

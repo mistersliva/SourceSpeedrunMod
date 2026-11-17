@@ -494,6 +494,13 @@
     split, reset, undo, skip,
     get running() { return t.phase !== 'idle'; },
     get panelVisible() { return visible(); },
+    get ended() { return t.phase === 'ended'; },
+    // Run time in ms (ghost race board), or null when no run.
+    ms() {
+      if (t.phase === 'idle') return null;
+      const v = t.phase === 'ended' ? value(t.splits[t.splits.length - 1]) : value(current());
+      return v == null ? null : Math.round(v);
+    },
     display() { const v = t.phase === 'ended' ? value(t.splits[t.splits.length - 1]) : value(current()); return fmtTimer(t.phase === 'idle' ? run.offset : v ?? 0); },
     // Browser preview.
     _demo(text) { parse(text); file = 'demo.lss'; render(true); },

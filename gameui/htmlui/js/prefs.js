@@ -51,6 +51,10 @@
     'timer.splitInterval': 1,
     'timer.splitExclude': '',
     'timer.countPauses': true,
+    // Ghost race (js/race.js)
+    'mp.name': '',
+    'mp.server': 'wss://ssm-race.sourcespeedrunmod.workers.dev',
+    'mp.board': true,
     // Replays (engine: ssm_replay_record), started and stopped with the timer
     'replay.autoRecord': true,
     'replay.keepResets': false,

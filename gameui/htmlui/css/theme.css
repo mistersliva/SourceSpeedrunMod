@@ -381,3 +381,26 @@ body.demo-playing #quick, body.demo-playing [data-open="savegame"] { display: no
 .crosshair-preview svg { transform: scale(2); }
 /* Demo controls only (right click while watching): the game stays visible */
 body.demo-only #main, body.demo-only #bgblur { display: none; }
+
+/* Ghost race lobby */
+.race-code-input { width: 7rem; text-transform: uppercase; letter-spacing: 0.2em; text-align: center; }
+.race-lobby { display: flex; align-items: center; gap: 1rem; padding: 0.6rem 0; }
+.race-lobby__label { color: var(--text-muted); font-size: 0.85rem; }
+.race-lobby__code { flex: 1; font-size: 2rem; font-weight: 300; letter-spacing: 0.3em; color: var(--accent); user-select: text; }
+.race-players { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.15rem; }
+.race-player { display: flex; align-items: center; gap: 0.6rem; padding: 0.45rem 0.7rem; background: rgba(255, 255, 255, 0.04); }
+.race-player.is-self { box-shadow: inset 2px 0 0 var(--accent); }
+.race-player__name { flex: 1; }
+.race-player__map { color: var(--text-muted); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+.race-error { color: #f26d6d; }
+
+/* Ghost race chat: input over the game (Y) and the log in the lobby screen */
+body.chat-only #main, body.chat-only #bgblur { display: none; }
+.chatbox { position: fixed; left: 2.4vw; bottom: 16vh; z-index: 40; display: flex; align-items: center; gap: 0.6rem; width: 32rem; padding: 0.4rem 0.6rem; background: rgba(20, 22, 26, 0.85); }
+.chatbox__label { color: var(--accent); font-size: 0.8rem; letter-spacing: 0.12em; text-transform: uppercase; }
+.chatbox__input { flex: 1; height: 2rem; padding: 0 0.5rem; border: 0; background: rgba(255, 255, 255, 0.06); color: var(--text); font: inherit; outline: none; }
+.race-chat { max-height: 9rem; overflow-y: auto; margin: 0.6rem 0 0.4rem; padding: 0.4rem 0.6rem; background: rgba(0, 0, 0, 0.2); font-size: 0.88rem; }
+.race-chat__line { padding: 0.1rem 0; overflow-wrap: anywhere; }
+.race-chat__line b { margin-right: 0.5rem; color: var(--accent); }
+.race-chat__line.is-self b { color: var(--text); }
+.race-chat__input { width: 100%; }

@@ -1,0 +1,10 @@
+{
+  "name": "ssm-race",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-01",
+  "durable_objects": {
+    "bindings": [{ "name": "LOBBY", "class_name": "Lobby" }]
+  },
+  // The free plan needs SQLite-backed Durable Objects.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Lobby"] }]
+}

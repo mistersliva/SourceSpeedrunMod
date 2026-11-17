@@ -39,6 +39,20 @@
     'Render': 'Рендер', 'Pause': 'Пауза', 'Play': 'Играть', 'Stop': 'Стоп', '−10s': '−10с', '+10s': '+10с',
     'Back 10 s': 'Назад на 10 с', 'Forward 10 s': 'Вперёд на 10 с', 'Play / pause': 'Пуск / пауза', 'Previous part': 'Предыдущая часть', 'Next part': 'Следующая часть',
     'Install ffmpeg in the launcher (Settings) to render videos': 'Установите ffmpeg в лаунчере (Настройки), чтобы рендерить видео',
+    // Ghost race
+    'Ghost race': 'Гонка с призраками', 'Your name': 'Ваше имя', 'Join': 'Войти', 'Create lobby': 'Создать лобби',
+    'Lobby code': 'Код лобби', 'Copy': 'Копировать', 'Leave lobby': 'Покинуть лобби', 'Start race': 'Начать гонку', 'Host': 'Хост',
+    'Race board in HUD': 'Таблица гонки в HUD', 'Show ghosts': 'Показывать призраков', 'Ghost opacity': 'Непрозрачность призраков',
+    'Race server': 'Сервер гонок', 'Race': 'Гонка', 'Finished': 'Финиш', 'Connecting…': 'Подключение…', 'CODE': 'КОД',
+    'Everyone plays their own game; the others show up as ghosts and on the race board. Create a lobby and send the code to your friends, or join with their code.':
+      'Каждый играет в своей игре; остальные видны как призраки и в таблице гонки. Создайте лобби и отправьте код друзьям или войдите по их коду.',
+    'When everyone is here, press Start race: after a 5 second countdown every player starts a new game.':
+      'Когда все соберутся, нажмите «Начать гонку»: после отсчёта 5 секунд у всех начнётся новая игра.',
+    'Waiting for the host to start the race.': 'Ждём, пока хост начнёт гонку.',
+    'No race server set (Settings → Multiplayer).': 'Не задан сервер гонок.',
+    'Disconnected from the lobby.': 'Соединение с лобби потеряно.', 'Could not connect to the race server.': 'Не удалось подключиться к серверу гонок.',
+    'Lobby is full': 'Лобби заполнено', 'Say': 'Чат', 'Message to the lobby (Y in game)': 'Сообщение в лобби (Y в игре)',
+    'Ghost race chat': 'Чат гонки',
     // Settings tabs
     'Game': 'Игра', 'Interface': 'Интерфейс', 'HUD': 'HUD', 'Timer': 'Таймер', 'Keyboard': 'Клавиатура', 'Mouse': 'Мышь', 'Audio': 'Звук', 'Video': 'Видео',
     // Game tab

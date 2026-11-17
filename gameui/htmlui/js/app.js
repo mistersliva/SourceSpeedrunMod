@@ -310,6 +310,7 @@
 
   function renderDemo(d) {
     demo = d;
+    window.__showChatBox?.(!!d.chat);
     const bar = $('#demobar');
     // Opened with the right mouse button / ssm_demo_ui, not with Esc.
     const show = !!d.playing && !d.rendering && !!d.controls;
@@ -360,6 +361,102 @@
     $('#demo-time').textContent = `${demoClock(Number(seek.value))} / ${demoClock(Number(seek.max))}`;
   });
   seek.addEventListener('change', () => { seeking = false; demoCmd(`demo_gototick ${seek.value}`); });
+
+  // Ghost race lobby. The connection itself lives on the HUD page (js/race.js),
+  // which runs for the whole session; this page sends it commands.
+  let raceSeq = Date.now();
+  const raceCtl = (action, extra = {}) => {
+    raceSeq = Math.max(raceSeq + 1, Date.now());
+    try { localStorage.setItem('race.ctl', JSON.stringify({ seq: raceSeq, action, ...extra })); } catch {}
+  };
+  const raceTime = (ms) => {
+    if (ms == null) return '';
+    const t = Math.floor(ms / 1000);
+    return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+  };
+
+  function renderRace() {
+    let st = {};
+    try { st = JSON.parse(localStorage.getItem('race.status') || '{}') || {}; } catch {}
+    const inLobby = st.state === 'lobby' || st.state === 'connecting';
+    $('#race-out').hidden = inLobby;
+    $('#race-in').hidden = !inLobby;
+    $('#race-leave').hidden = !inLobby;
+    const isHost = st.state === 'lobby' && st.host === st.me;
+    $('#race-start').hidden = !isHost;
+    $('#race-start').disabled = !!st.startAt;
+    $('#race-lobby-code').textContent = st.code || '';
+    const err = $('#race-error');
+    err.hidden = st.state !== 'error';
+    err.textContent = st.error || '';
+    $('#race-hint').textContent = st.state === 'connecting' ? 'Connecting…'
+      : isHost ? 'When everyone is here, press Start race: after a 5 second countdown every player starts a new game.'
+      : 'Waiting for the host to start the race.';
+    const log = $('#race-chat-log');
+    const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 4;
+    log.replaceChildren(...(st.chat || []).map((c) => h('div', { class: `race-chat__line${c.self ? ' is-self' : ''}` },
+      h('b', { text: c.name }), h('span', { text: c.text }))));
+    log.hidden = !(st.chat || []).length;
+    if (atBottom) log.scrollTop = log.scrollHeight;
+    $('#race-chat-input').disabled = st.state !== 'lobby';
+    $('#race-players').replaceChildren(...(st.players || []).map((p) => h('li', { class: `race-player${p.self ? ' is-self' : ''}` },
+      h('span', { class: 'race-player__name', text: p.name }),
+      p.id === st.host ? h('span', { class: 'badge', text: 'Host' }) : null,
+      h('span', { class: 'race-player__map', text: p.map ? `${p.map} ${raceTime(p.tm)}` : '' }))));
+  }
+  addEventListener('storage', (e) => { if (e.key === 'race.status') renderRace(); });
+
+  const raceName = $('#race-name');
+  raceName.value = Prefs.get('mp.name') || '';
+  raceName.addEventListener('change', () => Prefs.set('mp.name', raceName.value.trim().slice(0, 24)));
+  const needName = () => {
+    if (raceName.value.trim()) { Prefs.set('mp.name', raceName.value.trim().slice(0, 24)); return true; }
+    raceName.focus();
+    return false;
+  };
+  $('#race-create').addEventListener('click', () => {
+    if (!needName()) return;
+    const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let code = '';
+    for (let i = 0; i < 5; i++) code += abc[Math.floor(Math.random() * abc.length)];
+    raceCtl('create', { code });
+  });
+  $('#race-join').addEventListener('click', () => {
+    const code = $('#race-join-code').value.trim().toUpperCase();
+    if (!needName() || !/^[A-Z0-9]{4,8}$/.test(code)) { $('#race-join-code').focus(); return; }
+    raceCtl('join', { code });
+  });
+  $('#race-join-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#race-join').click(); });
+  $('#race-leave').addEventListener('click', () => raceCtl('leave'));
+  $('#race-start').addEventListener('click', () => raceCtl('start'));
+  $('#race-copy').addEventListener('click', () => {
+    const code = $('#race-lobby-code').textContent;
+    navigator.clipboard?.writeText(code).catch(() => {});
+    Source.sound('click');
+  });
+  const sendChat = (input) => {
+    const text = input.value.trim();
+    if (text) raceCtl('chat', { text });
+    input.value = '';
+  };
+  $('#race-chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(e.target); });
+
+  // Chat input over the game (ssm_race_chat, Y): Enter sends and returns to the
+  // game, Esc closes.
+  const chatInput = $('#chat-input');
+  chatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { sendChat(chatInput); Source.cmd('gameui_hide'); e.preventDefault(); }
+    else if (e.key === 'Escape') { chatInput.value = ''; Source.cmd('gameui_hide'); e.preventDefault(); e.stopPropagation(); }
+  });
+  window.__showChatBox = (show) => {
+    const box = $('#chatbox');
+    if (box.hidden !== !show) {
+      box.hidden = !show;
+      document.body.classList.toggle('chat-only', show);
+      if (show) { UI.closeAll(); chatInput.value = ''; setTimeout(() => chatInput.focus(), 30); }
+    }
+  };
+  UI.define('race', { onOpen(el) { raceCtl('status'); renderRace(); UI.refreshCvars(el); } });
 
   // Save
   let saveSelected = null; // null = new slot

@@ -150,8 +150,23 @@ const char *ParseToken( const char *data, std::string &token )
 //-----------------------------------------------------------------------------
 // ui.*
 //-----------------------------------------------------------------------------
+// Ghost race chat: Y opens it unless the player already uses Y. Done once, so
+// a player who unbinds it keeps it unbound.
+ConVar ssm_chat_key_set( "ssm_chat_key_set", "0", FCVAR_ARCHIVE | FCVAR_HIDDEN, "" );
+
+void BindChatKeyOnce()
+{
+	if ( ssm_chat_key_set.GetBool() )
+		return;
+	ssm_chat_key_set.SetValue( 1 );
+	const char *binding = gameuifuncs->GetBindingForButtonCode( KEY_Y );
+	if ( !binding || !binding[0] )
+		engine->ClientCmd_Unrestricted( "bind y ssm_race_chat\n" );
+}
+
 bool Api_UiReady( const json::Value &, json::Writer &out, std::string & )
 {
+	BindChatKeyOnce();
 	HtmlUI().OnPageReady();
 	out.Raw( UiApi_StateJson().c_str() );
 	return true;
@@ -865,6 +880,17 @@ CON_COMMAND( ssm_demo_ui, "Show or hide the demo playback controls (while a demo
 	engine->ClientCmd_Unrestricted( "gameui_activate\n" );
 }
 
+// Ghost race chat input over the game (key bound to ssm_race_chat, Y by default).
+ConVar ssm_chat_open( "ssm_chat_open", "0", FCVAR_HIDDEN | FCVAR_DONTRECORD, "" );
+
+CON_COMMAND( ssm_race_chat, "Ghost race: type a chat message." )
+{
+	if ( GameUI().IsActive() || engine->IsPlayingDemo() )
+		return;
+	ssm_chat_open.SetValue( 1 );
+	engine->ClientCmd_Unrestricted( "gameui_activate\n" );
+}
+
 // Demo / replay playback position for the menu's playback bar.
 bool Api_DemoState( const json::Value &, json::Writer &out, std::string & )
 {
@@ -872,6 +898,7 @@ bool Api_DemoState( const json::Value &, json::Writer &out, std::string & )
 	const bool playing = engine->IsPlayingDemo();
 	out.Prop( "playing", playing );
 	out.Prop( "controls", ssm_demo_ui_open.GetBool() );
+	out.Prop( "chat", ssm_chat_open.GetBool() );
 	if ( playing )
 	{
 		out.Prop( "loading", engine->IsLoadingDemo() );
@@ -1314,6 +1341,7 @@ bool Api_BindsList( const json::Value &, json::Writer &out, std::string & )
 		{ "+ssm_duckjump", "Duck + jump" },
 		{ "ssm_showpos", "Toggle position display (cl_showpos)" },
 		{ "ssm_demo_ui", "Demo playback controls (right mouse button while watching)" },
+		{ "ssm_race_chat", "Ghost race chat" },
 	};
 	auto writeSection = [&]( const char *title, const BindItem *items, size_t count ) {
 		out.BeginObject();
